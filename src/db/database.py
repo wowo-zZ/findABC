@@ -34,13 +34,63 @@ class PerformanceDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 
-                CREATE TABLE IF NOT EXISTS performance_records (
+                CREATE TABLE IF NOT EXISTS workload_scores (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     employee_id INTEGER,
-                    category TEXT NOT NULL,
+                    week_number INTEGER,
+                    year INTEGER,
+                    ranking_percentage REAL,
+                    score REAL,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS promotion_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER,
+                    promotion_type TEXT CHECK(promotion_type IN ('level', 'grade')),
+                    old_value TEXT,
+                    new_value TEXT,
+                    score REAL,
+                    promotion_date TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS technical_breakthrough_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER,
+                    level TEXT CHECK(level IN ('company', 'department')),
+                    project_name TEXT,
                     description TEXT,
                     score REAL,
-                    record_date TEXT,
+                    completion_date TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS experience_case_scores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER,
+                    level TEXT CHECK(level IN ('company', 'other')),
+                    case_title TEXT,
+                    description TEXT,
+                    score REAL,
+                    submission_date TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (employee_id) REFERENCES employees(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS performance_summary (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    employee_id INTEGER,
+                    total_score REAL,
+                    workload_score REAL,
+                    promotion_score REAL,
+                    technical_score REAL,
+                    experience_score REAL,
+                    summary_date TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (employee_id) REFERENCES employees(id)
                 );

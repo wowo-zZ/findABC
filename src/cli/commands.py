@@ -7,6 +7,7 @@ import subprocess
 import os
 from pathlib import Path
 from tabulate import tabulate
+from datetime import datetime
 
 @click.group()
 def cli():
@@ -36,6 +37,15 @@ def set_default_department(department):
     tracker = PerformanceTracker()
     tracker.update_global_setting('default_department', department, '全局默认部门设置')
     click.echo(f'成功设置默认部门: {department}')
+
+@cli.command()
+@click.option('--cycle', type=click.Choice(['monthly', 'quarterly']), prompt='绩效周期', help='设置绩效统计周期（monthly: 月度, quarterly: 季度）')
+def set_performance_cycle(cycle):
+    """设置绩效统计周期"""
+    tracker = PerformanceTracker()
+    tracker.update_global_setting('performance_cycle', cycle, '绩效统计周期设置')
+    cycle_text = '月度' if cycle == 'monthly' else '季度'
+    click.echo(f'成功设置绩效统计周期为: {cycle_text}')
 
 @cli.command()
 @click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
@@ -89,6 +99,308 @@ def show_employee(employee_id, format):
     
     click.echo(click.style(f'\n员工详细信息（ID: {employee_id}）：', fg='green', bold=True))
     click.echo(tabulate(info, tablefmt=format))
+
+@cli.command()
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def show_performance_summary(format):
+    """显示当前绩效周期内所有员工的绩效统计"""
+    tracker = PerformanceTracker()
+    start_date, end_date = tracker.get_current_performance_cycle()
+    
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        return
+    
+    summary = tracker.get_performance_summary(start_date, end_date)
+    if not summary:
+        click.echo('当前周期内暂无绩效记录')
+        return
+    
+    headers = ['ID', '姓名', '部门', '工作量', '技术', '责任心', '经验案例', '总分']
+    click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
+    click.echo(tabulate(summary, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.argument('employee_id', type=int)
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def show_performance_detail(employee_id, format):
+    """显示特定员工在当前绩效周期内的详细评分记录"""
+    tracker = PerformanceTracker()
+    start_date, end_date = tracker.get_current_performance_cycle()
+    
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        return
+    
+    # 获取员工信息
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'未找到ID为 {employee_id} 的员工')
+        return
+    
+    # 获取详细评分记录
+    details = tracker.get_employee_performance_detail(employee_id, start_date, end_date)
+    if not details:
+        click.echo('当前周期内暂无评分记录')
+        return
+    
+    headers = ['评分类别', '描述', '得分', '权重', '记录日期']
+    click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
+    click.echo(tabulate(details, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.option('--frontend-port', default=3000, help='前端服务端口号')
+@click.option('--backend-port', default=8000, help='后端服务端口号')
+def serve(frontend_port, backend_port):
+    """启动Web表单服务和后端API服务"""
+    web_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) / 'src' / 'web'
+    project_root = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    
+    click.echo('正在启动服务...')
+    
+    # 启动后端服务
+    try:
+        click.echo('正在启动后端服务...')
+        backend_process = subprocess.Popen(
+            ['python3', '-m', 'uvicorn', 'src.api.server:app', '--host', '0.0.0.0', '--port', str(backend_port)],
+            cwd=str(project_root),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # 等待一段时间检查后端服务是否成功启动
+        import time
+        time.sleep(2)
+        
+        if backend_process.poll() is not None:
+            # 如果进程已经结束，说明启动失败
+            _, stderr = backend_process.communicate()
+            click.echo(f'后端服务启动失败: {stderr.decode()}', err=True)
+            return
+            
+        click.echo(f'后端服务访问地址: http://localhost:{backend_port}')
+        click.echo(f'前端服务访问地址: http://localhost:{frontend_port}')
+        
+        # 启动前端服务
+        try:
+            subprocess.run(
+                ['npm', 'run', 'dev', '--', '--port', str(frontend_port)],
+                cwd=str(web_dir)
+            )
+        finally:
+            # 确保在前端服务结束时关闭后端服务
+            backend_process.terminate()
+            backend_process.wait()
+            
+    except Exception as e:
+        click.echo(f'服务启动失败: {str(e)}', err=True)
+        if 'backend_process' in locals():
+            backend_process.terminate()
+            backend_process.wait()
+def get_week_prompt():
+    """生成周数选择的提示信息，包含日期范围"""
+    current_year = datetime.now().year
+    current_week = datetime.now().isocalendar()[1]
+    weeks_info = []
+    
+    # 首先添加最近6周的信息（本周和前5周）
+    start_week = max(1, current_week - 5)
+    end_week = current_week
+    
+    for week in range(start_week, end_week + 1):
+        first_day = datetime.strptime(f'{current_year}-W{week:02d}-1', '%Y-W%W-%w')
+        last_day = datetime.strptime(f'{current_year}-W{week:02d}-0', '%Y-W%W-%w')
+        weeks_info.append(f'{week}. 第{week}周：{first_day.strftime("%m.%d")}-{last_day.strftime("%m.%d")}' + (' (本周)' if week == current_week else ''))
+    
+    # 生成提示信息
+    prompt = click.style('\n最近6周：', fg='green', bold=True) + '\n'
+    prompt += "\n".join(weeks_info)
+    
+    # 添加查看所有周的选项
+    prompt += "\n\n输入 'all' 查看所有周\n"
+    prompt += "请输入周数或 'all'："
+    
+    return prompt
+
+@cli.command()
+@click.option('--week', prompt=get_week_prompt(), type=int, help='输入第几周（1-52）')
+def record_workload(week):
+    """记录员工每周工作量排名"""
+    year = datetime.now().year
+    
+    if not 1 <= week <= 52:
+        click.echo('无效的周数，请输入1-52之间的数字')
+        return
+
+    tracker = PerformanceTracker()
+    
+    # 检查是否已有记录
+    existing_record = tracker.get_workload_record(week, year)
+    if existing_record:
+        if not click.confirm('该周已有工作量记录，是否要修改？'):
+            return
+    
+    # 获取所有员工列表
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+    
+    click.echo(click.style('\n当前员工列表：', fg='green', bold=True))
+    headers = ['ID', '姓名', '部门', '职位']
+    click.echo(tabulate(employees, headers=headers))
+    
+    click.echo('\n请输入员工姓名，按工作量从高到低排序（空格分隔）：')
+    while True:
+        try:
+            input_names = click.prompt('员工姓名').strip().split()
+            
+            # 验证输入的姓名是否都有效，并获取对应的员工ID
+            employee_dict = {emp[1]: emp[0] for emp in employees}  # 建立姓名到ID的映射
+            invalid_names = [name for name in input_names if name not in employee_dict]
+            
+            if invalid_names:
+                click.echo(f'以下姓名无效：{"、".join(invalid_names)}，请重新输入')
+                continue
+            
+            if len(input_names) != len(employees):
+                click.echo('请输入所有员工的姓名')
+                continue
+            
+            if len(input_names) != len(set(input_names)):
+                click.echo('员工姓名有重复，请重新输入')
+                continue
+            
+            # 将姓名转换为ID
+            employee_ids = [employee_dict[name] for name in input_names]
+            break
+        except ValueError:
+            click.echo('输入格式错误，请输入有效的员工姓名（用空格分隔）')
+    
+    # 计算每个员工的得分
+    total_employees = len(employee_ids)
+    top_30_count = int(total_employees * 0.3)
+    mid_30_count = int(total_employees * 0.3)
+    
+    scores = []
+    for i, eid in enumerate(employee_ids):
+        if i < top_30_count:
+            score = 10
+        elif i < top_30_count + mid_30_count:
+            score = 8
+        else:
+            score = 7
+        scores.append((eid, score))
+    
+    # 显示评分结果
+    click.echo('\n评分结果：')
+    result_data = []
+    for eid, score in scores:
+        emp = next(emp for emp in employees if emp[0] == eid)
+        result_data.append([emp[1], score])
+    
+    click.echo(tabulate(result_data, headers=['姓名', '得分']))
+    
+    if click.confirm('确认保存以上评分结果？'):
+        # 保存到数据库
+        for eid, score in scores:
+            emp = next(emp for emp in employees if emp[0] == eid)
+            ranking_percentage = employee_ids.index(eid) / total_employees * 100
+            tracker.add_workload_score(eid, week, year, ranking_percentage, score, 
+                                     f'{year}年第{week}周工作量评分')
+        
+        click.echo('评分结果已保存')
+
+
+@cli.command()
+@click.option('--category', prompt='评分类别', help='评分类别')
+@click.option('--weight', prompt='权重', type=float, help='权重(0-1)')
+@click.option('--description', prompt='规则描述', help='规则描述')
+def set_rule(category, weight, description):
+    """设置评分规则"""
+    tracker = PerformanceTracker()
+    tracker.update_scoring_rule(category, weight, description)
+    click.echo('成功更新评分规则')
+
+@cli.command()
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def list_employees(format):
+    """列出所有员工的基本信息"""
+    tracker = PerformanceTracker()
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+    
+    headers = ['ID', '姓名', '部门', '职位']
+    click.echo(click.style('\n员工列表：', fg='green', bold=True))
+    click.echo(tabulate(employees, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.argument('employee_id', type=int)
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def show_employee(employee_id, format):
+    """显示特定员工的详细信息"""
+    tracker = PerformanceTracker()
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'未找到ID为 {employee_id} 的员工')
+        return
+    
+    # 将元组转换为字典，方便格式化输出
+    fields = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '电话', '部门', '职位', '入职日期', '创建时间']
+    info = [[field, value] for field, value in zip(fields, employee)]
+    
+    click.echo(click.style(f'\n员工详细信息（ID: {employee_id}）：', fg='green', bold=True))
+    click.echo(tabulate(info, tablefmt=format))
+
+@cli.command()
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def show_performance_summary(format):
+    """显示当前绩效周期内所有员工的绩效统计"""
+    tracker = PerformanceTracker()
+    start_date, end_date = tracker.get_current_performance_cycle()
+    
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        return
+    
+    summary = tracker.get_performance_summary(start_date, end_date)
+    if not summary:
+        click.echo('当前周期内暂无绩效记录')
+        return
+    
+    headers = ['ID', '姓名', '部门', '工作量', '技术', '责任心', '经验案例', '总分']
+    click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
+    click.echo(tabulate(summary, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.argument('employee_id', type=int)
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def show_performance_detail(employee_id, format):
+    """显示特定员工在当前绩效周期内的详细评分记录"""
+    tracker = PerformanceTracker()
+    start_date, end_date = tracker.get_current_performance_cycle()
+    
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        return
+    
+    # 获取员工信息
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'未找到ID为 {employee_id} 的员工')
+        return
+    
+    # 获取详细评分记录
+    details = tracker.get_employee_performance_detail(employee_id, start_date, end_date)
+    if not details:
+        click.echo('当前周期内暂无评分记录')
+        return
+    
+    headers = ['评分类别', '描述', '得分', '权重', '记录日期']
+    click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
+    click.echo(tabulate(details, headers=headers, tablefmt=format))
 
 @cli.command()
 @click.option('--frontend-port', default=3000, help='前端服务端口号')
