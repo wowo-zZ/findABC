@@ -21,13 +21,15 @@ def cli():
 @click.option('--hometown', prompt='家乡', help='家乡')
 @click.option('--university', prompt='毕业院校', help='毕业院校')
 @click.option('--major', prompt='专业', help='专业')
-@click.option('--phone', prompt='联系电话', help='联系电话')
+@click.option('--phone', prompt='联系电话', help='联系电话（11位手机号）')
+@click.option('--id-card', prompt='身份证号', help='18位身份证号码')
 @click.option('--department', help='所属部门（可选）')
-@click.option('--position', prompt='职位', help='职位')
-def add_employee(name, domain_account, gender, hometown, university, major, phone, department, position):
+@click.option('--position', prompt='职级', type=click.Choice(['P2-1', 'P2-2', 'P2-3', 'P3-1', 'P3-2', 'P3-3', 'P4-1', 'P4-2', 'P4-3']), help='职级（P2-1至P4-3）')
+@click.option('--join-date', prompt='入职日期', help='入职日期（格式：YYYY-MM-DD）')
+def add_employee(name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date):
     """添加新员工信息"""
     tracker = PerformanceTracker()
-    tracker.add_employee(name, domain_account, gender, hometown, university, major, phone, department, position)
+    tracker.add_employee(name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date)
     click.echo(f'成功添加员工: {name}')
 
 @cli.command()
@@ -69,18 +71,25 @@ def set_rule(category, weight, description):
     click.echo('成功更新评分规则')
 
 @cli.command()
-@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def list_employees(format):
-    """列出所有员工的基本信息"""
+@click.argument('employee_id', type=int)
+@click.option('--force', '-f', is_flag=True, help='强制删除，不进行确认')
+def delete_employee(employee_id, force):
+    """删除指定员工"""
     tracker = PerformanceTracker()
-    employees = tracker.get_all_employees()
-    if not employees:
-        click.echo('暂无员工信息')
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'未找到ID为 {employee_id} 的员工')
         return
     
-    headers = ['ID', '姓名', '部门', '职位']
-    click.echo(click.style('\n员工列表：', fg='green', bold=True))
-    click.echo(tabulate(employees, headers=headers, tablefmt=format))
+    if not force and not click.confirm(f'确定要删除员工 {employee[1]}（ID: {employee_id}）吗？'):
+        click.echo('操作已取消')
+        return
+    
+    try:
+        tracker.delete_employee(employee_id)
+        click.echo(f'成功删除员工 {employee[1]}（ID: {employee_id}）')
+    except Exception as e:
+        click.echo(f'删除员工失败：{str(e)}')
 
 @cli.command()
 @click.argument('employee_id', type=int)
@@ -352,9 +361,44 @@ def list_employees(format):
         click.echo('暂无员工信息')
         return
     
-    headers = ['ID', '姓名', '部门', '职位']
+    headers = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '身份证号', '手机号', '部门', '职位', '入职日期']
     click.echo(click.style('\n员工列表：', fg='green', bold=True))
-    click.echo(tabulate(employees, headers=headers, tablefmt=format))
+    # 格式化员工数据，确保只显示需要的字段，并对敏感信息进行脱敏处理
+    formatted_data = []
+    for emp in employees:
+        # 对身份证号进行脱敏：显示前6位和后4位，中间用*号代替
+        id_card = emp[7] if len(emp[7]) >= 10 else emp[7]
+        masked_id_card = id_card[:6] + '*' * (len(id_card)-10) + id_card[-4:] if len(id_card) >= 10 else id_card
+        
+        # 对手机号进行脱敏：显示前3位和后4位，中间用*号代替
+        phone = emp[8] if len(emp[8]) >= 7 else emp[8]
+        masked_phone = phone[:3] + '*' * (len(phone)-7) + phone[-4:] if len(phone) >= 7 else phone
+        
+        formatted_data.append([emp[0], emp[1], emp[2], emp[3], emp[4], emp[5], emp[6], 
+                              masked_id_card, masked_phone, emp[9], emp[10], emp[11]])
+    
+    click.echo(tabulate(formatted_data, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.argument('employee_id', type=int)
+@click.option('--force', '-f', is_flag=True, help='强制删除，不进行确认')
+def delete_employee(employee_id, force):
+    """删除指定员工"""
+    tracker = PerformanceTracker()
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'未找到ID为 {employee_id} 的员工')
+        return
+    
+    if not force and not click.confirm(f'确定要删除员工 {employee[1]}（ID: {employee_id}）吗？'):
+        click.echo('操作已取消')
+        return
+    
+    try:
+        tracker.delete_employee(employee_id)
+        click.echo(f'成功删除员工 {employee[1]}（ID: {employee_id}）')
+    except Exception as e:
+        click.echo(f'删除员工失败：{str(e)}')
 
 @cli.command()
 @click.argument('employee_id', type=int)

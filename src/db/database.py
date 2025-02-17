@@ -27,11 +27,14 @@ class PerformanceDB:
                     hometown TEXT,
                     university TEXT,
                     major TEXT,
-                    phone TEXT,
+                    phone TEXT NOT NULL,
+                    id_card TEXT NOT NULL,
                     department TEXT,
                     position TEXT,
                     join_date TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(id_card),
+                    UNIQUE(phone)
                 );
                 
                 CREATE TABLE IF NOT EXISTS workload_scores (

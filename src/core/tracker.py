@@ -9,14 +9,13 @@ class PerformanceTracker:
     def __init__(self):
         self.db = PerformanceDB()
     
-    def add_employee(self, name, domain_account, gender, hometown, university, major, phone, department, position):
+    def add_employee(self, name, domain_account, gender, hometown, university, major, phone, department, position, join_date):
         """添加新员工"""
         with sqlite3.connect(self.db.db_path) as conn:
             conn.execute(
                 "INSERT INTO employees (name, domain_account, gender, hometown, university, major, phone, department, position, join_date) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, domain_account, gender, hometown, university, major, phone, department, position, 
-                 datetime.now().strftime('%Y-%m-%d'))
+                (name, domain_account, gender, hometown, university, major, phone, department, position, join_date)
             )
     
     def add_performance_record(self, employee_id, category, description, score):
@@ -37,10 +36,10 @@ class PerformanceTracker:
             )
     
     def get_all_employees(self):
-        """获取所有员工的基本信息"""
+        """获取所有员工的详细信息"""
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.execute(
-                "SELECT id, name, department, position FROM employees ORDER BY id"
+                "SELECT id, name, domain_account, gender, hometown, university, major, id_card, phone, department, position, join_date FROM employees ORDER BY id"
             )
             return cursor.fetchall()
     
@@ -52,6 +51,30 @@ class PerformanceTracker:
                 (employee_id,)
             )
             return cursor.fetchone()
+    
+    def delete_employee(self, employee_id):
+        """删除指定员工及其相关记录"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查员工是否存在
+            cursor = conn.execute("SELECT id FROM employees WHERE id = ?", (employee_id,))
+            if not cursor.fetchone():
+                raise ValueError("员工不存在")
+            
+            # 删除员工相关的所有记录
+            tables = [
+                'workload_scores',
+                'promotion_scores',
+                'technical_breakthrough_scores',
+                'experience_case_scores',
+                'performance_summary'
+            ]
+            
+            # 删除关联表中的记录
+            for table in tables:
+                conn.execute(f"DELETE FROM {table} WHERE employee_id = ?", (employee_id,))
+            
+            # 删除员工记录
+            conn.execute("DELETE FROM employees WHERE id = ?", (employee_id,))
     
     def update_global_setting(self, key, value, description):
         """更新全局设置"""
