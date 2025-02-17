@@ -200,7 +200,7 @@ def serve(frontend_port, backend_port):
 def get_week_prompt():
     """生成周数选择的提示信息，包含日期范围"""
     current_year = datetime.now().year
-    current_week = datetime.now().isocalendar()[1]
+    current_week = datetime.now().isocalendar()[1] - 1
     weeks_info = []
     
     # 首先添加最近6周的信息（本周和前5周）
@@ -223,10 +223,30 @@ def get_week_prompt():
     return prompt
 
 @cli.command()
-@click.option('--week', prompt=get_week_prompt(), type=int, help='输入第几周（1-52）')
+@click.option('--week', prompt=get_week_prompt(), type=str, help='输入第几周（1-52）或输入"all"查看所有周')
 def record_workload(week):
     """记录员工每周工作量排名"""
     year = datetime.now().year
+    
+    if week.lower() == 'all':
+        # 显示所有周的信息
+        all_weeks_info = []
+        for w in range(1, 53):
+            first_day = datetime.strptime(f'{year}-W{w:02d}-1', '%Y-W%W-%w')
+            last_day = datetime.strptime(f'{year}-W{w:02d}-0', '%Y-W%W-%w')
+            all_weeks_info.append(f'{w}. 第{w}周：{first_day.strftime("%m.%d")}-{last_day.strftime("%m.%d")}')
+        
+        click.echo(click.style('\n本年度所有周：', fg='green', bold=True))
+        click.echo('\n'.join(all_weeks_info))
+        
+        # 让用户重新选择周数
+        week = click.prompt('请输入要记录的周数', type=int)
+    else:
+        try:
+            week = int(week)
+        except ValueError:
+            click.echo('请输入有效的周数或"all"')
+            return
     
     if not 1 <= week <= 52:
         click.echo('无效的周数，请输入1-52之间的数字')
