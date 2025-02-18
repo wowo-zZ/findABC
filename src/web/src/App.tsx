@@ -14,7 +14,6 @@ interface EmployeeForm {
   major: string;
   phone: string;
   id_card: string;
-  department?: string;
   position: string;
   join_date: string;
 }
@@ -122,13 +121,6 @@ const App: React.FC = () => {
                  { pattern: /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/, message: '请输入正确的身份证号' }]}
         >
           <Input placeholder="请输入您的身份证号" />
-        </Form.Item>
-
-        <Form.Item
-          name="department"
-          label="所属部门"
-        >
-          <Input placeholder="请输入您的所属部门（选填）" />
         </Form.Item>
 
         <Form.Item

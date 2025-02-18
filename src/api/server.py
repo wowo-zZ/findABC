@@ -32,7 +32,6 @@ class Employee(BaseModel):
     major: str
     phone: str
     id_card: str
-    department: Optional[str] = None
     position: str
     join_date: str
 
