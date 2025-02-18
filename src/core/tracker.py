@@ -43,6 +43,15 @@ class PerformanceTracker:
             )
             return cursor.fetchall()
     
+    def get_employee_by_name(self, name):
+        """根据姓名获取员工的详细信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT * FROM employees WHERE name = ?",
+                (name,)
+            )
+            return cursor.fetchone()
+    
     def get_employee_detail(self, employee_id):
         """获取特定员工的详细信息"""
         with sqlite3.connect(self.db.db_path) as conn:

@@ -92,21 +92,42 @@ def delete_employee(employee_id, force):
         click.echo(f'删除员工失败：{str(e)}')
 
 @cli.command()
-@click.argument('employee_id', type=int)
+@click.argument('identifier')
+@click.option('--name', '-n', help='按姓名查询')
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def show_employee(employee_id, format):
-    """显示特定员工的详细信息"""
+def show_employee(identifier, name, format):
+    """显示员工的详细信息
+    
+    可以通过ID或姓名查询（使用--by-name选项）
+    
+    示例：
+    perf show-employee 1        # 通过ID查询
+    perf show-employee -n 张三  # 通过姓名查询
+    """
     tracker = PerformanceTracker()
-    employee = tracker.get_employee_detail(employee_id)
-    if not employee:
-        click.echo(f'未找到ID为 {employee_id} 的员工')
-        return
+    
+    tracker = PerformanceTracker()
+    if name:
+        employee = tracker.get_employee_by_name(name)
+        if not employee:
+            click.echo(f'未找到姓名为 {name} 的员工')
+            return
+    else:
+        try:
+            employee_id = int(identifier)
+            employee = tracker.get_employee_detail(employee_id)
+            if not employee:
+                click.echo(f'未找到ID为 {employee_id} 的员工')
+                return
+        except ValueError:
+            click.echo('使用ID查询时，ID必须为数字')
+            return
     
     # 将元组转换为字典，方便格式化输出
-    fields = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '电话', '部门', '职位', '入职日期', '创建时间']
+    fields = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '电话', '身份证', '部门', '职级', '入职日期']
     info = [[field, value] for field, value in zip(fields, employee)]
     
-    click.echo(click.style(f'\n员工详细信息（ID: {employee_id}）：', fg='green', bold=True))
+    click.echo(click.style(f'\n员工详细信息：', fg='green', bold=True))
     click.echo(tabulate(info, tablefmt=format))
 
 @cli.command()
@@ -125,7 +146,7 @@ def show_performance_summary(format):
         click.echo('当前周期内暂无绩效记录')
         return
     
-    headers = ['ID', '姓名', '部门', '工作量', '技术', '责任心', '经验案例', '总分']
+    headers = ['ID', '姓名', '部门', '工作量', '技术', 'responsibility', '经验案例', '总分']
     click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
     click.echo(tabulate(summary, headers=headers, tablefmt=format))
 
@@ -408,14 +429,29 @@ def delete_employee(employee_id, force):
         click.echo(f'删除员工失败：{str(e)}')
 
 @cli.command()
-@click.argument('employee_id', type=int)
+@click.argument('employee_id', required=False)
+@click.option('--name', '-n', help='按姓名查询')
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def show_employee(employee_id, format):
-    """显示特定员工的详细信息"""
+def show_employee(employee_id, name, format):
+    """显示员工的详细信息"""
     tracker = PerformanceTracker()
-    employee = tracker.get_employee_detail(employee_id)
+    
+    if name:
+        employee = tracker.get_employee_by_name(name)
+    elif employee_id:
+        try:
+            employee_id = int(employee_id)
+            employee = tracker.get_employee_detail(employee_id)
+        except ValueError:
+            click.echo('错误：员工ID必须是一个整数')
+            return
+    else:
+        click.echo('错误：请提供员工ID或使用--name选项指定员工姓名')
+        return
+
     if not employee:
-        click.echo(f'未找到ID为 {employee_id} 的员工')
+        message = f'未找到{"姓名为 " + name if name else "ID为 " + str(employee_id)}的员工'
+        click.echo(message)
         return
     
     # 将元组转换为字典，方便格式化输出
@@ -441,7 +477,7 @@ def show_performance_summary(format):
         click.echo('当前周期内暂无绩效记录')
         return
     
-    headers = ['ID', '姓名', '部门', '工作量', '技术', '责任心', '经验案例', '总分']
+    headers = ['ID', '姓名', '部门', '工作量', '技术', 'responsibility', '经验案例', '总分']
     click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
     click.echo(tabulate(summary, headers=headers, tablefmt=format))
 
