@@ -352,7 +352,7 @@ def set_rule(category, weight, description):
     click.echo('成功更新评分规则')
 
 @cli.command()
-@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+@click.option('--format', '-f', default='fancy_grid', help='输出格式 (simple/grid/fancy_grid)')
 def list_employees(format):
     """列出所有员工的基本信息"""
     tracker = PerformanceTracker()
@@ -365,7 +365,7 @@ def list_employees(format):
     click.echo(click.style('\n员工列表：', fg='green', bold=True))
     # 格式化员工数据，确保只显示需要的字段，并对敏感信息进行脱敏处理
     formatted_data = []
-    for emp in employees:
+    for i, emp in enumerate(employees):
         # 对身份证号进行脱敏：显示前6位和后4位，中间用*号代替
         id_card = emp[7] if len(emp[7]) >= 10 else emp[7]
         masked_id_card = id_card[:6] + '*' * (len(id_card)-10) + id_card[-4:] if len(id_card) >= 10 else id_card
@@ -374,9 +374,16 @@ def list_employees(format):
         phone = emp[8] if len(emp[8]) >= 7 else emp[8]
         masked_phone = phone[:3] + '*' * (len(phone)-7) + phone[-4:] if len(phone) >= 7 else phone
         
-        formatted_data.append([emp[0], emp[1], emp[2], emp[3], emp[4], emp[5], emp[6], 
-                              masked_id_card, masked_phone, emp[9], emp[10], emp[11]])
+        # 为偶数行添加颜色
+        row_data = [emp[0], emp[1], emp[2], emp[3], emp[4], emp[5], emp[6], 
+                   masked_id_card, masked_phone, emp[9], emp[10], emp[11]]
+        if i % 2 == 0:
+            row_data = [click.style(str(cell), fg='yellow') for cell in row_data]
+        else:
+            row_data = [click.style(str(cell), fg='green') for cell in row_data]
+        formatted_data.append(row_data)
     
+    # 使用fancy_grid作为默认格式，并添加表格边框
     click.echo(tabulate(formatted_data, headers=headers, tablefmt=format))
 
 @cli.command()

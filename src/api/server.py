@@ -43,7 +43,7 @@ async def create_employee(employee: Employee):
             # 获取全局配置的默认部门
             cursor = conn.execute("SELECT value FROM global_settings WHERE key = 'default_department'")
             default_department = cursor.fetchone()
-            department = employee.department or (default_department[0] if default_department else None)
+            department = default_department[0] if default_department else None
             
             conn.execute(
                 "INSERT INTO employees (name, domain_account, gender, hometown, university, major, phone, department, position, join_date, id_card) "
