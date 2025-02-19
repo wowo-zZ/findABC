@@ -130,7 +130,7 @@ class PerformanceTracker:
             return cursor.fetchone()
     
     def add_workload_score(self, employee_id, week, year, ranking_percentage, score, description):
-        """添加工作量评分记录并更新绩效汇总"""
+        """添加工作量评分记录"""
         with sqlite3.connect(self.db.db_path) as conn:
             # 添加工作量评分记录
             conn.execute(
@@ -138,86 +138,58 @@ class PerformanceTracker:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (employee_id, week, year, ranking_percentage, score, description)
             )
-            
-            # 获取当前绩效周期
-            start_date, end_date = self.get_current_performance_cycle()
-            if not start_date or not end_date:
-                return
-            
-            # 计算该员工在当前周期内的各项得分
-            cursor = conn.execute(
-                """SELECT 
-                    AVG(ws.score) as workload_score,
-                    COALESCE((SELECT AVG(score) FROM technical_breakthrough_scores 
-                             WHERE employee_id = ? AND completion_date BETWEEN ? AND ?), 0) as technical_score,
-                    COALESCE((SELECT AVG(score) FROM promotion_scores 
-                             WHERE employee_id = ? AND promotion_date BETWEEN ? AND ?), 0) as promotion_score,
-                    COALESCE((SELECT AVG(score) FROM experience_case_scores 
-                             WHERE employee_id = ? AND submission_date BETWEEN ? AND ?), 0) as experience_score
-                FROM workload_scores ws
-                WHERE ws.employee_id = ? AND ws.created_at BETWEEN ? AND ?""",
-                (employee_id, start_date, end_date,
-                 employee_id, start_date, end_date,
-                 employee_id, start_date, end_date,
-                 employee_id, start_date, end_date)
-            )
-            scores = cursor.fetchone()
-            
-            if scores:
-                workload_score = scores[0] or 0
-                technical_score = scores[1] or 0
-                promotion_score = scores[2] or 0
-                experience_score = scores[3] or 0
-                
-                # 计算总分（这里假设各项权重相等）
-                total_score = round((workload_score + technical_score + promotion_score + experience_score) / 4, 2)
-                
-                # 更新或插入绩效汇总记录
-                conn.execute(
-                    """INSERT OR REPLACE INTO performance_summary 
-                       (employee_id, workload_score, technical_score, promotion_score, 
-                        experience_score, total_score, summary_date)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (employee_id, round(workload_score, 2), round(technical_score, 2), round(promotion_score, 2),
-                     round(experience_score, 2), total_score, datetime.now().strftime('%Y-%m-%d'))
-                )
     
     def get_performance_summary(self, start_date, end_date):
         """获取指定时间段内的绩效统计汇总"""
         with sqlite3.connect(self.db.db_path) as conn:
-            # 获取所有员工的绩效记录，使用窗口函数获取每个员工最新的记录
             cursor = conn.execute(
-                """WITH WorkloadSum AS (
+                """WITH WorkloadScores AS (
                     SELECT employee_id,
-                           SUM(score) as total_workload_score
+                           COALESCE(ROUND(AVG(score), 2), 0) as workload_score
                     FROM workload_scores
                     WHERE created_at BETWEEN ? AND ?
                     GROUP BY employee_id
                 ),
-                RankedPerformance AS (
+                TechnicalScores AS (
                     SELECT employee_id,
-                           technical_score,
-                           promotion_score,
-                           experience_score,
-                           total_score,
-                           summary_date,
-                           ROW_NUMBER() OVER (PARTITION BY employee_id ORDER BY summary_date DESC) as rn
-                    FROM performance_summary
-                    WHERE summary_date BETWEEN ? AND ?
+                           COALESCE(ROUND(AVG(score), 2), 0) as technical_score
+                    FROM technical_breakthrough_scores
+                    WHERE completion_date BETWEEN ? AND ?
+                    GROUP BY employee_id
+                ),
+                PromotionScores AS (
+                    SELECT employee_id,
+                           COALESCE(ROUND(AVG(score), 2), 0) as promotion_score
+                    FROM promotion_scores
+                    WHERE promotion_date BETWEEN ? AND ?
+                    GROUP BY employee_id
+                ),
+                ExperienceScores AS (
+                    SELECT employee_id,
+                           COALESCE(ROUND(AVG(score), 2), 0) as experience_score
+                    FROM experience_case_scores
+                    WHERE submission_date BETWEEN ? AND ?
+                    GROUP BY employee_id
                 )
                 SELECT e.id, e.name, e.department,
-                       COALESCE(ROUND(ws.total_workload_score, 2), 0) as workload_score,
-                       ROUND(ps.technical_score, 2) as technical_score,
-                       ROUND(ps.promotion_score, 2) as promotion_score,
-                       ROUND(ps.experience_score, 2) as experience_score,
-                       ROUND((COALESCE(ws.total_workload_score, 0) + COALESCE(ps.technical_score * 4, 0) + 
-                             COALESCE(ps.promotion_score * 4, 0) + COALESCE(ps.experience_score * 4, 0)) / 4, 2) as total_score
+                       COALESCE(ws.workload_score, 0) as workload_score,
+                       COALESCE(ts.technical_score, 0) as technical_score,
+                       COALESCE(ps.promotion_score, 0) as promotion_score,
+                       COALESCE(es.experience_score, 0) as experience_score,
+                       ROUND((COALESCE(ws.workload_score, 0) + 
+                             COALESCE(ts.technical_score, 0) + 
+                             COALESCE(ps.promotion_score, 0) + 
+                             COALESCE(es.experience_score, 0)) / 4, 2) as total_score
                 FROM employees e
-                LEFT JOIN WorkloadSum ws ON e.id = ws.employee_id
-                LEFT JOIN RankedPerformance ps ON e.id = ps.employee_id AND ps.rn = 1
+                LEFT JOIN WorkloadScores ws ON e.id = ws.employee_id
+                LEFT JOIN TechnicalScores ts ON e.id = ts.employee_id
+                LEFT JOIN PromotionScores ps ON e.id = ps.employee_id
+                LEFT JOIN ExperienceScores es ON e.id = es.employee_id
                 WHERE e.is_active = 1
                 ORDER BY total_score DESC NULLS LAST""",
                 (start_date, end_date,
+                 start_date, end_date,
+                 start_date, end_date,
                  start_date, end_date)
             )
             return cursor.fetchall()

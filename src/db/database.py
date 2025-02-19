@@ -85,19 +85,6 @@ class PerformanceDB:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (employee_id) REFERENCES employees(id)
                 );
-
-                CREATE TABLE IF NOT EXISTS performance_summary (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    employee_id INTEGER,
-                    total_score REAL,
-                    workload_score REAL,
-                    promotion_score REAL,
-                    technical_score REAL,
-                    experience_score REAL,
-                    summary_date TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (employee_id) REFERENCES employees(id)
-                );
                 
                 CREATE TABLE IF NOT EXISTS scoring_rules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
