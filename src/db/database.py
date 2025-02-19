@@ -32,6 +32,7 @@ class PerformanceDB:
                     department TEXT,
                     position TEXT,
                     join_date TEXT,
+                    is_active BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(id_card),
                     UNIQUE(phone)

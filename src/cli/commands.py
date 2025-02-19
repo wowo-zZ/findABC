@@ -179,6 +179,19 @@ def show_performance_detail(employee_id, format):
     click.echo(tabulate(details, headers=headers, tablefmt=format))
 
 @cli.command()
+@click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
+@click.option('--active/--inactive', prompt='是否激活', help='激活或取消激活员工')
+def toggle_employee_status(employee_id, active):
+    """激活或取消激活员工"""
+    tracker = PerformanceTracker()
+    try:
+        tracker.toggle_employee_status(employee_id, active)
+        status = '激活' if active else '取消激活'
+        click.echo(f'成功{status}员工')
+    except ValueError as e:
+        click.echo(f'错误：{str(e)}')
+
+@cli.command()
 @click.option('--frontend-port', default=3000, help='前端服务端口号')
 @click.option('--backend-port', default=8000, help='后端服务端口号')
 def serve(frontend_port, backend_port):
@@ -296,9 +309,15 @@ def record_workload(week):
         click.echo('暂无员工信息')
         return
     
-    click.echo(click.style('\n当前员工列表：', fg='green', bold=True))
+    # 过滤出激活状态的员工
+    active_employees = [emp for emp in employees if emp[12]]  # emp[12]是is_active字段
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    click.echo(click.style('\n当前激活员工列表：', fg='green', bold=True))
     headers = ['ID', '姓名', '部门', '职位']
-    click.echo(tabulate(employees, headers=headers))
+    click.echo(tabulate([(emp[0], emp[1], emp[9], emp[10]) for emp in active_employees], headers=headers))
     
     click.echo('\n请输入员工姓名，按工作量从高到低排序（空格分隔）：')
     while True:
@@ -306,19 +325,23 @@ def record_workload(week):
             input_names = click.prompt('员工姓名').strip().split()
             
             # 验证输入的姓名是否都有效，并获取对应的员工ID
-            employee_dict = {emp[1]: emp[0] for emp in employees}  # 建立姓名到ID的映射
+            employee_dict = {emp[1]: emp[0] for emp in active_employees}  # 建立姓名到ID的映射
             invalid_names = [name for name in input_names if name not in employee_dict]
             
             if invalid_names:
                 click.echo(f'以下姓名无效：{"、".join(invalid_names)}，请重新输入')
                 continue
             
-            if len(input_names) != len(employees):
-                click.echo('请输入所有员工的姓名')
+            if len(input_names) != len(active_employees):
+                missing_names = set(emp[1] for emp in active_employees) - set(input_names)
+                click.echo(f'请输入所有激活状态员工的姓名，当前缺少：{", ".join(missing_names)}')
                 continue
             
             if len(input_names) != len(set(input_names)):
-                click.echo('员工姓名有重复，请重新输入')
+                # 找出重复的姓名
+                duplicate_names = [name for name in input_names if input_names.count(name) > 1]
+                duplicate_names = list(set(duplicate_names))  # 去重，每个重复姓名只显示一次
+                click.echo(f'以下员工姓名有重复：{"、".join(duplicate_names)}，请重新输入')
                 continue
             
             # 将姓名转换为ID
@@ -382,7 +405,7 @@ def list_employees(format):
         click.echo('暂无员工信息')
         return
     
-    headers = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '身份证号', '手机号', '部门', '职位', '入职日期']
+    headers = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '身份证号', '手机号', '部门', '职位', '入职日期', '状态']
     click.echo(click.style('\n员工列表：', fg='green', bold=True))
     # 格式化员工数据，确保只显示需要的字段，并对敏感信息进行脱敏处理
     formatted_data = []
@@ -395,13 +418,19 @@ def list_employees(format):
         phone = emp[8] if len(emp[8]) >= 7 else emp[8]
         masked_phone = phone[:3] + '*' * (len(phone)-7) + phone[-4:] if len(phone) >= 7 else phone
         
-        # 为偶数行添加颜色
+        # 根据激活状态设置颜色
+        status = '已激活' if emp[12] else '未激活'
         row_data = [emp[0], emp[1], emp[2], emp[3], emp[4], emp[5], emp[6], 
-                   masked_id_card, masked_phone, emp[9], emp[10], emp[11]]
-        if i % 2 == 0:
-            row_data = [click.style(str(cell), fg='yellow') for cell in row_data]
-        else:
-            row_data = [click.style(str(cell), fg='green') for cell in row_data]
+                   masked_id_card, masked_phone, emp[9], emp[10], emp[11], status]
+        
+        # 未激活员工使用灰色，激活员工根据奇偶行使用不同颜色
+        if not emp[12]:  # 未激活
+            row_data = [click.style(str(cell), fg='white') for cell in row_data]
+        else:  # 已激活
+            if i % 2 == 0:
+                row_data = [click.style(str(cell), fg='yellow') for cell in row_data]
+            else:
+                row_data = [click.style(str(cell), fg='green') for cell in row_data]
         formatted_data.append(row_data)
     
     # 使用fancy_grid作为默认格式，并添加表格边框
@@ -508,6 +537,19 @@ def show_performance_detail(employee_id, format):
     headers = ['评分类别', '描述', '得分', '权重', '记录日期']
     click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
     click.echo(tabulate(details, headers=headers, tablefmt=format))
+
+@cli.command()
+@click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
+@click.option('--active/--inactive', prompt='是否激活', help='激活或取消激活员工')
+def toggle_employee_status(employee_id, active):
+    """激活或取消激活员工"""
+    tracker = PerformanceTracker()
+    try:
+        tracker.toggle_employee_status(employee_id, active)
+        status = '激活' if active else '取消激活'
+        click.echo(f'成功{status}员工')
+    except ValueError as e:
+        click.echo(f'错误：{str(e)}')
 
 @cli.command()
 @click.option('--frontend-port', default=3000, help='前端服务端口号')
