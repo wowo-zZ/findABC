@@ -14,7 +14,7 @@ def cli():
     """员工绩效跟踪系统 - 帮助管理团队成员的日常表现和绩效评估"""
     pass
 
-@cli.command()
+@cli.command('add-emp')
 @click.option('--name', prompt='员工姓名', help='员工姓名')
 @click.option('--domain-account', prompt='域账号', help='域账号（字母+数字的字符串）')
 @click.option('--gender', prompt='性别', help='性别')
@@ -27,54 +27,54 @@ def cli():
 @click.option('--position', prompt='职级', type=click.Choice(['P2-1', 'P2-2', 'P2-3', 'P3-1', 'P3-2', 'P3-3', 'P4-1', 'P4-2', 'P4-3']), help='职级（P2-1至P4-3）')
 @click.option('--join-date', prompt='入职日期', help='入职日期（格式：YYYY-MM-DD）')
 def add_employee(name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date):
-    """添加新员工信息"""
+    """添加新员工信息 (add_employee)"""
     tracker = PerformanceTracker()
     tracker.add_employee(name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date)
     click.echo(f'成功添加员工: {name}')
 
-@cli.command()
+@cli.command('set-dept')
 @click.option('--department', prompt='默认部门', help='设置全局默认部门')
 def set_default_department(department):
-    """设置全局默认部门"""
+    """设置全局默认部门 (set_default_department)"""
     tracker = PerformanceTracker()
     tracker.update_global_setting('default_department', department, '全局默认部门设置')
     click.echo(f'成功设置默认部门: {department}')
 
-@cli.command()
+@cli.command('set-perf')
 @click.option('--cycle', type=click.Choice(['monthly', 'quarterly']), prompt='绩效周期', help='设置绩效统计周期（monthly: 月度, quarterly: 季度）')
 def set_performance_cycle(cycle):
-    """设置绩效统计周期"""
+    """设置绩效统计周期 (set_performance_cycle)"""
     tracker = PerformanceTracker()
     tracker.update_global_setting('performance_cycle', cycle, '绩效统计周期设置')
     cycle_text = '月度' if cycle == 'monthly' else '季度'
     click.echo(f'成功设置绩效统计周期为: {cycle_text}')
 
-@cli.command()
+@cli.command('add-rec')
 @click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
 @click.option('--category', prompt='表现类别', help='表现类别(如：工作量/技术攻关/responsibility等)')
 @click.option('--description', prompt='具体描述', help='表现的具体描述')
 @click.option('--score', prompt='评分', type=float, help='评分(0-100)')
 def add_record(employee_id, category, description, score):
-    """记录员工表现"""
+    """记录员工表现 (add_record)"""
     tracker = PerformanceTracker()
     tracker.add_performance_record(employee_id, category, description, score)
     click.echo('成功记录员工表现')
 
-@cli.command()
+@cli.command('set-rule')
 @click.option('--category', prompt='评分类别', help='评分类别')
 @click.option('--weight', prompt='权重', type=float, help='权重(0-1)')
 @click.option('--description', prompt='规则描述', help='规则描述')
 def set_rule(category, weight, description):
-    """设置评分规则"""
+    """设置评分规则 (set_rule)"""
     tracker = PerformanceTracker()
     tracker.update_scoring_rule(category, weight, description)
     click.echo('成功更新评分规则')
 
-@cli.command()
+@cli.command('del-emp')
 @click.argument('employee_id', type=int)
 @click.option('--force', '-f', is_flag=True, help='强制删除，不进行确认')
 def delete_employee(employee_id, force):
-    """删除指定员工"""
+    """删除指定员工 (delete_employee)"""
     tracker = PerformanceTracker()
     employee = tracker.get_employee_detail(employee_id)
     if not employee:
@@ -91,37 +91,31 @@ def delete_employee(employee_id, force):
     except Exception as e:
         click.echo(f'删除员工失败：{str(e)}')
 
-@cli.command()
-@click.argument('identifier')
+@cli.command('show-emp')
+@click.argument('identifier', required=False)
 @click.option('--name', '-n', help='按姓名查询')
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
 def show_employee(identifier, name, format):
-    """显示员工的详细信息
-    
-    可以通过ID或姓名查询（使用--by-name选项）
-    
-    示例：
-    perf show-employee 1        # 通过ID查询
-    perf show-employee -n 张三  # 通过姓名查询
-    """
+    """显示员工的详细信息 (show_employee)"""
     tracker = PerformanceTracker()
     
-    tracker = PerformanceTracker()
     if name:
         employee = tracker.get_employee_by_name(name)
-        if not employee:
-            click.echo(f'未找到姓名为 {name} 的员工')
-            return
-    else:
+    elif identifier:
         try:
             employee_id = int(identifier)
             employee = tracker.get_employee_detail(employee_id)
-            if not employee:
-                click.echo(f'未找到ID为 {employee_id} 的员工')
-                return
         except ValueError:
             click.echo('使用ID查询时，ID必须为数字')
             return
+    else:
+        click.echo('错误：请提供员工ID或使用--name选项指定员工姓名')
+        return
+    
+    if not employee:
+        message = f'未找到{"姓名为 " + name if name else "ID为 " + str(identifier)}的员工'
+        click.echo(message)
+        return
     
     # 将元组转换为字典，方便格式化输出
     fields = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '电话', '身份证', '部门', '职级', '入职日期']
@@ -130,10 +124,10 @@ def show_employee(identifier, name, format):
     click.echo(click.style(f'\n员工详细信息：', fg='green', bold=True))
     click.echo(tabulate(info, tablefmt=format))
 
-@cli.command()
+@cli.command('show-perf')
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
 def show_performance_summary(format):
-    """显示当前绩效周期内所有员工的绩效统计"""
+    """显示当前绩效周期内所有员工的绩效统计 (show_performance_summary)"""
     tracker = PerformanceTracker()
     start_date, end_date = tracker.get_current_performance_cycle()
     
@@ -150,11 +144,11 @@ def show_performance_summary(format):
     click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
     click.echo(tabulate(summary, headers=headers, tablefmt=format))
 
-@cli.command()
+@cli.command('show-detail')
 @click.argument('employee_id', type=int)
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
 def show_performance_detail(employee_id, format):
-    """显示特定员工在当前绩效周期内的详细评分记录"""
+    """显示特定员工在当前绩效周期内的详细评分记录 (show_performance_detail)"""
     tracker = PerformanceTracker()
     start_date, end_date = tracker.get_current_performance_cycle()
     
@@ -178,11 +172,11 @@ def show_performance_detail(employee_id, format):
     click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
     click.echo(tabulate(details, headers=headers, tablefmt=format))
 
-@cli.command()
+@cli.command('toggle-emp')
 @click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
 @click.option('--active/--inactive', prompt='是否激活', help='激活或取消激活员工')
 def toggle_employee_status(employee_id, active):
-    """激活或取消激活员工"""
+    """激活或取消激活员工 (toggle_employee_status)"""
     tracker = PerformanceTracker()
     try:
         tracker.toggle_employee_status(employee_id, active)
@@ -191,11 +185,11 @@ def toggle_employee_status(employee_id, active):
     except ValueError as e:
         click.echo(f'错误：{str(e)}')
 
-@cli.command()
+@cli.command('web')
 @click.option('--frontend-port', default=3000, help='前端服务端口号')
 @click.option('--backend-port', default=8000, help='后端服务端口号')
 def serve(frontend_port, backend_port):
-    """启动Web表单服务和后端API服务"""
+    """启动Web表单服务和后端API服务 (serve)"""
     web_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) / 'src' / 'web'
     project_root = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     
@@ -240,6 +234,7 @@ def serve(frontend_port, backend_port):
         if 'backend_process' in locals():
             backend_process.terminate()
             backend_process.wait()
+
 def get_week_prompt():
     """生成周数选择的提示信息，包含日期范围"""
     current_year = datetime.now().year
@@ -265,10 +260,10 @@ def get_week_prompt():
     
     return prompt
 
-@cli.command()
+@cli.command('rec-work')
 @click.option('--week', prompt=get_week_prompt(), type=str, help='输入第几周（1-52）或输入"all"查看所有周')
 def record_workload(week):
-    """记录员工每周工作量排名"""
+    """记录员工每周工作量排名 (record_workload)"""
     year = datetime.now().year
     
     if week.lower() == 'all':
@@ -384,21 +379,10 @@ def record_workload(week):
         
         click.echo('评分结果已保存')
 
-
-@cli.command()
-@click.option('--category', prompt='评分类别', help='评分类别')
-@click.option('--weight', prompt='权重', type=float, help='权重(0-1)')
-@click.option('--description', prompt='规则描述', help='规则描述')
-def set_rule(category, weight, description):
-    """设置评分规则"""
-    tracker = PerformanceTracker()
-    tracker.update_scoring_rule(category, weight, description)
-    click.echo('成功更新评分规则')
-
-@cli.command()
+@cli.command('list-emp')
 @click.option('--format', '-f', default='fancy_grid', help='输出格式 (simple/grid/fancy_grid)')
 def list_employees(format):
-    """列出所有员工的基本信息"""
+    """列出所有员工的基本信息 (list_employees)"""
     tracker = PerformanceTracker()
     employees = tracker.get_all_employees()
     if not employees:
@@ -435,168 +419,3 @@ def list_employees(format):
     
     # 使用fancy_grid作为默认格式，并添加表格边框
     click.echo(tabulate(formatted_data, headers=headers, tablefmt=format))
-
-@cli.command()
-@click.argument('employee_id', type=int)
-@click.option('--force', '-f', is_flag=True, help='强制删除，不进行确认')
-def delete_employee(employee_id, force):
-    """删除指定员工"""
-    tracker = PerformanceTracker()
-    employee = tracker.get_employee_detail(employee_id)
-    if not employee:
-        click.echo(f'未找到ID为 {employee_id} 的员工')
-        return
-    
-    if not force and not click.confirm(f'确定要删除员工 {employee[1]}（ID: {employee_id}）吗？'):
-        click.echo('操作已取消')
-        return
-    
-    try:
-        tracker.delete_employee(employee_id)
-        click.echo(f'成功删除员工 {employee[1]}（ID: {employee_id}）')
-    except Exception as e:
-        click.echo(f'删除员工失败：{str(e)}')
-
-@cli.command()
-@click.argument('employee_id', required=False)
-@click.option('--name', '-n', help='按姓名查询')
-@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def show_employee(employee_id, name, format):
-    """显示员工的详细信息"""
-    tracker = PerformanceTracker()
-    
-    if name:
-        employee = tracker.get_employee_by_name(name)
-    elif employee_id:
-        try:
-            employee_id = int(employee_id)
-            employee = tracker.get_employee_detail(employee_id)
-        except ValueError:
-            click.echo('错误：员工ID必须是一个整数')
-            return
-    else:
-        click.echo('错误：请提供员工ID或使用--name选项指定员工姓名')
-        return
-
-    if not employee:
-        message = f'未找到{"姓名为 " + name if name else "ID为 " + str(employee_id)}的员工'
-        click.echo(message)
-        return
-    
-    # 将元组转换为字典，方便格式化输出
-    fields = ['ID', '姓名', '域账号', '性别', '家乡', '毕业院校', '专业', '电话', '部门', '职位', '入职日期', '创建时间']
-    info = [[field, value] for field, value in zip(fields, employee)]
-    
-    click.echo(click.style(f'\n员工详细信息（ID: {employee_id}）：', fg='green', bold=True))
-    click.echo(tabulate(info, tablefmt=format))
-
-@cli.command()
-@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def show_performance_summary(format):
-    """显示当前绩效周期内所有员工的绩效统计"""
-    tracker = PerformanceTracker()
-    start_date, end_date = tracker.get_current_performance_cycle()
-    
-    if not start_date or not end_date:
-        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
-        return
-    
-    summary = tracker.get_performance_summary(start_date, end_date)
-    if not summary:
-        click.echo('当前周期内暂无绩效记录')
-        return
-    
-    headers = ['ID', '姓名', '部门', '工作量', '技术', 'responsibility', '经验案例', '总分']
-    click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
-    click.echo(tabulate(summary, headers=headers, tablefmt=format))
-
-@cli.command()
-@click.argument('employee_id', type=int)
-@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
-def show_performance_detail(employee_id, format):
-    """显示特定员工在当前绩效周期内的详细评分记录"""
-    tracker = PerformanceTracker()
-    start_date, end_date = tracker.get_current_performance_cycle()
-    
-    if not start_date or not end_date:
-        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
-        return
-    
-    # 获取员工信息
-    employee = tracker.get_employee_detail(employee_id)
-    if not employee:
-        click.echo(f'未找到ID为 {employee_id} 的员工')
-        return
-    
-    # 获取详细评分记录
-    details = tracker.get_employee_performance_detail(employee_id, start_date, end_date)
-    if not details:
-        click.echo('当前周期内暂无评分记录')
-        return
-    
-    headers = ['评分类别', '描述', '得分', '权重', '记录日期']
-    click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
-    click.echo(tabulate(details, headers=headers, tablefmt=format))
-
-@cli.command()
-@click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
-@click.option('--active/--inactive', prompt='是否激活', help='激活或取消激活员工')
-def toggle_employee_status(employee_id, active):
-    """激活或取消激活员工"""
-    tracker = PerformanceTracker()
-    try:
-        tracker.toggle_employee_status(employee_id, active)
-        status = '激活' if active else '取消激活'
-        click.echo(f'成功{status}员工')
-    except ValueError as e:
-        click.echo(f'错误：{str(e)}')
-
-@cli.command()
-@click.option('--frontend-port', default=3000, help='前端服务端口号')
-@click.option('--backend-port', default=8000, help='后端服务端口号')
-def serve(frontend_port, backend_port):
-    """启动Web表单服务和后端API服务"""
-    web_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))) / 'src' / 'web'
-    project_root = Path(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    
-    click.echo('正在启动服务...')
-    
-    # 启动后端服务
-    try:
-        click.echo('正在启动后端服务...')
-        backend_process = subprocess.Popen(
-            ['python3', '-m', 'uvicorn', 'src.api.server:app', '--host', '0.0.0.0', '--port', str(backend_port)],
-            cwd=str(project_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
-        )
-        
-        # 等待一段时间检查后端服务是否成功启动
-        import time
-        time.sleep(2)
-        
-        if backend_process.poll() is not None:
-            # 如果进程已经结束，说明启动失败
-            _, stderr = backend_process.communicate()
-            click.echo(f'后端服务启动失败: {stderr.decode()}', err=True)
-            return
-            
-        click.echo(f'后端服务访问地址: http://localhost:{backend_port}')
-        click.echo(f'前端服务访问地址: http://localhost:{frontend_port}')
-        
-        # 启动前端服务
-        try:
-            subprocess.run(
-                ['npm', 'run', 'dev', '--', '--port', str(frontend_port)],
-                cwd=str(web_dir)
-            )
-        finally:
-            # 确保在前端服务结束时关闭后端服务
-            backend_process.terminate()
-            backend_process.wait()
-            
-    except Exception as e:
-        click.echo(f'服务启动失败: {str(e)}', err=True)
-        if 'backend_process' in locals():
-            backend_process.terminate()
-            backend_process.wait()
