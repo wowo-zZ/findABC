@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from tabulate import tabulate
 from datetime import datetime
+import sqlite3
 
 @click.group()
 def cli():
@@ -50,15 +51,97 @@ def set_performance_cycle(cycle):
     click.echo(f'成功设置绩效统计周期为: {cycle_text}')
 
 @cli.command('add-rec')
-@click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')
-@click.option('--category', prompt='表现类别', help='表现类别(如：工作量/技术攻关/responsibility等)')
-@click.option('--description', prompt='具体描述', help='表现的具体描述')
-@click.option('--score', prompt='评分', type=float, help='评分(0-100)')
-def add_record(employee_id, category, description, score):
+@click.pass_context
+def add_record(ctx):
     """记录员工表现 (add_record)"""
     tracker = PerformanceTracker()
-    tracker.add_performance_record(employee_id, category, description, score)
-    click.echo('成功记录员工表现')
+    
+    # 获取并显示所有激活状态的员工
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+        
+    active_employees = [emp for emp in employees if emp[12]]
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    # 将员工信息格式化为 "ID:姓名" 的形式，每行显示多个
+    employee_info = [f"{emp[0]}:{emp[1]}" for emp in active_employees]
+    formatted_info = "  ".join(employee_info)
+    click.echo(click.style("\n当前激活员工列表（ID:姓名）：", fg='green'))
+    click.echo(formatted_info + "\n")
+    
+    # 检查当前是否在有效的绩效周期内
+    start_date, end_date = tracker.get_current_performance_cycle()
+    if not start_date or not end_date:
+        click.echo('错误：请先设置绩效统计周期（使用 set-perf 命令）')
+        return
+
+    # 先获取员工ID
+    employee_id = click.prompt('请输入员工ID', type=int)
+    
+    # 验证员工是否存在且处于激活状态
+    employee = tracker.get_employee_detail(employee_id)
+    if not employee:
+        click.echo(f'错误：未找到ID为 {employee_id} 的员工')
+        return
+    
+    if not employee[12]:  # 检查是否激活
+        click.echo(f'错误：员工 {employee[1]} 当前处于未激活状态，无法记录表现')
+        return
+    
+    # 获取当前启用的表现类别
+    categories = tracker.get_active_categories()
+    if not categories:
+        click.echo('错误：未找到任何可用的表现类别，请先添加类别')
+        return
+    
+    click.echo(click.style('\n可选的表现类别：', fg='green'))
+    for i, (name, description) in enumerate(categories, 1):
+        click.echo(f'{i}. {name} - {description}')
+    
+    while True:
+        category_input = click.prompt('请选择表现类别(输入序号或类别名称)')
+        try:
+            # 尝试通过序号选择
+            idx = int(category_input) - 1
+            if 0 <= idx < len(categories):
+                category = categories[idx][0]  # 获取类别名称
+                break
+        except ValueError:
+            # 通过名称选择
+            if category_input in [cat[0] for cat in categories]:
+                category = category_input
+                break
+        click.echo('无效的选择，请重新输入')
+    
+    operation = click.prompt('操作类型 (+/-)', type=click.Choice(['+', '-']))
+    score = click.prompt('分值 (0-100)', type=float)
+    description = click.prompt('具体描述')
+    
+    # 根据操作类型调整分数
+    final_score = score if operation == '+' else -score
+    
+    try:
+        # 使用当前时间作为记录时间
+        tracker.add_performance_record(
+            employee_id=employee_id,
+            category=category,
+            description=f'{"加分" if operation == "+" else "减分"}原因：{description}',
+            score=final_score
+        )
+        
+        operation_text = '加' if operation == '+' else '减'
+        click.echo(click.style(f'成功为员工 {employee[1]} {operation_text}分：', fg='green'))
+        click.echo(f'类别：{category}')
+        click.echo(f'分值：{operation}{score}')
+        click.echo(f'原因：{description}')
+        click.echo(f'记录时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+        
+    except Exception as e:
+        click.echo(f'记录失败：{str(e)}')
 
 @cli.command('set-rule')
 @click.option('--category', prompt='评分类别', help='评分类别')
@@ -132,17 +215,36 @@ def show_performance_summary(format):
     start_date, end_date = tracker.get_current_performance_cycle()
     
     if not start_date or not end_date:
-        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        click.echo('请先设置绩效周期（使用 set-perf 命令）')
         return
     
-    summary = tracker.get_performance_summary(start_date, end_date)
+    # 获取绩效统计和表现类别
+    summary, categories = tracker.get_performance_summary(start_date, end_date)
     if not summary:
         click.echo('当前周期内暂无绩效记录')
         return
-    
-    headers = ['ID', '姓名', '部门', '工作量', '技术', 'responsibility', '经验案例', '总分']
+
+    # 动态构建表头
+    headers = ['ID', '姓名', '部门', '工作承担'] + categories + ['总分']
     click.echo(click.style(f'\n绩效统计（{start_date} 至 {end_date}）：', fg='green', bold=True))
-    click.echo(tabulate(summary, headers=headers, tablefmt=format))
+    
+    # 格式化数据，添加颜色
+    formatted_summary = []
+    for row in summary:
+        # 转换为列表以便修改
+        row_data = list(row)
+        # 为得分添加颜色（从工作承担开始到总分的所有列）
+        for i in range(3, len(row_data)):
+            score = row_data[i]
+            if score > 0:
+                row_data[i] = click.style(f"{score:>6.2f}", fg='green')
+            elif score < 0:
+                row_data[i] = click.style(f"{score:>6.2f}", fg='red')
+            else:
+                row_data[i] = f"{score:>6.2f}"
+        formatted_summary.append(row_data)
+    
+    click.echo(tabulate(formatted_summary, headers=headers, tablefmt=format))
 
 @cli.command('show-detail')
 @click.argument('employee_id', type=int)
@@ -419,3 +521,30 @@ def list_employees(format):
     
     # 使用fancy_grid作为默认格式，并添加表格边框
     click.echo(tabulate(formatted_data, headers=headers, tablefmt=format))
+
+@cli.command('add-cat')
+@click.option('--name', prompt='类别名称', help='表现类别名称')
+@click.option('--description', prompt='类别描述', help='表现类别描述')
+def add_category(name, description):
+    """添加新的表现类别 (add_category)"""
+    tracker = PerformanceTracker()
+    try:
+        tracker.add_category(name, description)
+        click.echo(f'成功添加表现类别: {name}')
+    except sqlite3.IntegrityError:
+        click.echo(f'错误：类别 {name} 已存在')
+    except Exception as e:
+        click.echo(f'添加类别失败：{str(e)}')
+
+@cli.command('toggle-cat')
+@click.option('--name', prompt='类别名称', help='表现类别名称')
+@click.option('--active/--inactive', prompt='是否启用', help='启用或禁用类别')
+def toggle_category(name, active):
+    """启用或禁用表现类别 (toggle_category)"""
+    tracker = PerformanceTracker()
+    try:
+        tracker.toggle_category(name, active)
+        status = '启用' if active else '禁用'
+        click.echo(f'成功{status}类别: {name}')
+    except Exception as e:
+        click.echo(f'操作失败：{str(e)}')

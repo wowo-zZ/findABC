@@ -21,10 +21,22 @@ class PerformanceTracker:
     def add_performance_record(self, employee_id, category, description, score):
         """记录员工表现"""
         with sqlite3.connect(self.db.db_path) as conn:
+            # 首先获取category_id
+            cursor = conn.execute(
+                "SELECT id FROM performance_categories WHERE name = ? AND is_active = 1",
+                (category,)
+            )
+            category_row = cursor.fetchone()
+            if not category_row:
+                raise ValueError(f"类别 '{category}' 不存在或未启用")
+            
+            category_id = category_row[0]
+            
+            # 插入记录
             conn.execute(
-                "INSERT INTO performance_records (employee_id, category, description, score, record_date) "
+                "INSERT INTO performance_records (employee_id, category_id, description, score, record_date) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (employee_id, category, description, score, datetime.now().strftime('%Y-%m-%d'))
+                (employee_id, category_id, description, score, datetime.now().strftime('%Y-%m-%d'))
             )
     
     def update_scoring_rule(self, category, weight, description):
@@ -139,85 +151,123 @@ class PerformanceTracker:
                 (employee_id, week, year, ranking_percentage, score, description)
             )
     
-    def get_performance_summary(self, start_date, end_date):
-        """获取指定时间段内的绩效统计汇总"""
+    def get_workload_summary(self, start_date, end_date):
+        """获取指定时间段内的工作量评分汇总"""
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.execute(
-                """WITH WorkloadScores AS (
-                    SELECT employee_id,
-                           COALESCE(ROUND(AVG(score), 2), 0) as workload_score
-                    FROM workload_scores
-                    WHERE created_at BETWEEN ? AND ?
-                    GROUP BY employee_id
-                ),
-                TechnicalScores AS (
-                    SELECT employee_id,
-                           COALESCE(ROUND(AVG(score), 2), 0) as technical_score
-                    FROM technical_breakthrough_scores
-                    WHERE completion_date BETWEEN ? AND ?
-                    GROUP BY employee_id
-                ),
-                PromotionScores AS (
-                    SELECT employee_id,
-                           COALESCE(ROUND(AVG(score), 2), 0) as promotion_score
-                    FROM promotion_scores
-                    WHERE promotion_date BETWEEN ? AND ?
-                    GROUP BY employee_id
-                ),
-                ExperienceScores AS (
-                    SELECT employee_id,
-                           COALESCE(ROUND(AVG(score), 2), 0) as experience_score
-                    FROM experience_case_scores
-                    WHERE submission_date BETWEEN ? AND ?
-                    GROUP BY employee_id
-                )
-                SELECT e.id, e.name, e.department,
-                       COALESCE(ws.workload_score, 0) as workload_score,
-                       COALESCE(ts.technical_score, 0) as technical_score,
-                       COALESCE(ps.promotion_score, 0) as promotion_score,
-                       COALESCE(es.experience_score, 0) as experience_score,
-                       ROUND((COALESCE(ws.workload_score, 0) + 
-                             COALESCE(ts.technical_score, 0) + 
-                             COALESCE(ps.promotion_score, 0) + 
-                             COALESCE(es.experience_score, 0)) / 4, 2) as total_score
-                FROM employees e
-                LEFT JOIN WorkloadScores ws ON e.id = ws.employee_id
-                LEFT JOIN TechnicalScores ts ON e.id = ts.employee_id
-                LEFT JOIN PromotionScores ps ON e.id = ps.employee_id
-                LEFT JOIN ExperienceScores es ON e.id = es.employee_id
-                WHERE e.is_active = 1
-                ORDER BY total_score DESC NULLS LAST""",
-                (start_date, end_date,
-                 start_date, end_date,
-                 start_date, end_date,
-                 start_date, end_date)
+                """
+                SELECT 
+                    employee_id,
+                    ROUND(AVG(score), 2) as avg_score
+                FROM performance_records pr
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pc.name = '工作量'
+                AND pr.record_date BETWEEN ? AND ?
+                GROUP BY employee_id
+                """,
+                (start_date, end_date)
             )
             return cursor.fetchall()
+    
+    def get_workload_details(self, start_date, end_date):
+        """获取指定时间段内的工作量评分详情"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT 
+                    week_number,
+                    COUNT(DISTINCT employee_id) as employee_count,
+                    ROUND(AVG(score), 2) as avg_score,
+                    year
+                FROM workload_scores
+                WHERE (year || '-' || PRINTF('%02d', week_number)) BETWEEN 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?)) 
+                    AND 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?))
+                GROUP BY year, week_number
+                ORDER BY year, week_number
+                """,
+                (start_date, start_date, end_date, end_date)
+            )
+            return cursor.fetchall()
+    
+    def get_performance_summary(self, start_date, end_date):
+        """获取指定时间段内的绩效统计"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 首先获取所有激活的表现类别
+            cursor = conn.execute(
+                "SELECT name FROM performance_categories WHERE is_active = 1 ORDER BY name"
+            )
+            categories = [row[0] for row in cursor.fetchall()]
+            
+            # 构建动态SQL查询
+            category_columns = ',\n'.join([
+                f"COALESCE(MAX(CASE WHEN cs.category = '{cat}' THEN cs.category_score END), 0) as {cat.replace(' ', '_')}_score"
+                for cat in categories
+            ])
+            
+            sql = f"""
+            WITH WorkloadScores AS (
+                -- 计算工作量得分（从workload_scores表获取总分）
+                SELECT 
+                    employee_id,
+                    ROUND(SUM(score), 2) as workload_score  -- 改为SUM而不是AVG
+                FROM workload_scores
+                WHERE (year || '-' || PRINTF('%02d', week_number)) BETWEEN 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?)) 
+                    AND 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?))
+                GROUP BY employee_id
+            ),
+            CategoryScores AS (
+                -- 计算各表现类别的总分
+                SELECT 
+                    pr.employee_id,
+                    pc.name as category,
+                    ROUND(SUM(pr.score), 2) as category_score
+                FROM performance_records pr
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pr.record_date BETWEEN ? AND ?
+                GROUP BY pr.employee_id, pc.name
+            )
+            SELECT 
+                e.id,
+                e.name,
+                e.department,
+                COALESCE(ws.workload_score, 0) as workload_score,
+                {category_columns},
+                ROUND(
+                    COALESCE(ws.workload_score, 0) + 
+                    COALESCE(SUM(cs.category_score), 0)
+                , 2) as total_score
+            FROM employees e
+            LEFT JOIN WorkloadScores ws ON e.id = ws.employee_id
+            LEFT JOIN CategoryScores cs ON e.id = cs.employee_id
+            WHERE e.is_active = 1
+            GROUP BY e.id, e.name, e.department
+            ORDER BY total_score DESC
+            """
+            
+            cursor = conn.execute(sql, (start_date, start_date, end_date, end_date, start_date, end_date))
+            return cursor.fetchall(), categories
     
     def get_employee_performance_detail(self, employee_id, start_date, end_date):
         """获取指定员工在指定时间段内的详细绩效记录"""
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.execute(
-                """SELECT 'workload' as category, description, score, 1 as weight, created_at as record_date
-                   FROM workload_scores
-                   WHERE employee_id = ? AND created_at BETWEEN ? AND ?
-                   UNION ALL
-                   SELECT 'promotion' as category, new_value as description, score, 1 as weight, promotion_date as record_date
-                   FROM promotion_scores
-                   WHERE employee_id = ? AND promotion_date BETWEEN ? AND ?
-                   UNION ALL
-                   SELECT 'technical' as category, description, score, 1 as weight, completion_date as record_date
-                   FROM technical_breakthrough_scores
-                   WHERE employee_id = ? AND completion_date BETWEEN ? AND ?
-                   UNION ALL
-                   SELECT 'experience' as category, description, score, 1 as weight, submission_date as record_date
-                   FROM experience_case_scores
-                   WHERE employee_id = ? AND submission_date BETWEEN ? AND ?
-                   ORDER BY record_date DESC""",
-                (employee_id, start_date, end_date,
-                 employee_id, start_date, end_date,
-                 employee_id, start_date, end_date,
-                 employee_id, start_date, end_date)
+                """
+                SELECT 
+                    pc.name as category,
+                    pr.description,
+                    pr.score,
+                    pr.record_date
+                FROM performance_records pr
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pr.employee_id = ? 
+                AND pr.record_date BETWEEN ? AND ?
+                ORDER BY pr.record_date DESC
+                """,
+                (employee_id, start_date, end_date)
             )
             return cursor.fetchall()
     
@@ -252,3 +302,27 @@ class PerformanceTracker:
                 end_date = (end_date - timedelta(days=1)).strftime('%Y-%m-%d')
                 
             return start_date, end_date
+
+    def get_active_categories(self):
+        """获取所有启用的表现类别"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT name, description FROM performance_categories WHERE is_active = 1"
+            )
+            return cursor.fetchall()
+
+    def add_category(self, name, description):
+        """添加新的表现类别"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            conn.execute(
+                "INSERT INTO performance_categories (name, description) VALUES (?, ?)",
+                (name, description)
+            )
+
+    def toggle_category(self, name, active):
+        """启用或禁用表现类别"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            conn.execute(
+                "UPDATE performance_categories SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
+                (active, name)
+            )
