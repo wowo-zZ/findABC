@@ -255,7 +255,7 @@ def show_performance_detail(employee_id, format):
     start_date, end_date = tracker.get_current_performance_cycle()
     
     if not start_date or not end_date:
-        click.echo('请先设置绩效周期（使用 set_performance_cycle 命令）')
+        click.echo('请先设置绩效周期（使用 set-performance_cycle 命令）')
         return
     
     # 获取员工信息
@@ -264,15 +264,44 @@ def show_performance_detail(employee_id, format):
         click.echo(f'未找到ID为 {employee_id} 的员工')
         return
     
-    # 获取详细评分记录
-    details = tracker.get_employee_performance_detail(employee_id, start_date, end_date)
-    if not details:
-        click.echo('当前周期内暂无评分记录')
-        return
-    
-    headers = ['评分类别', '描述', '得分', '权重', '记录日期']
     click.echo(click.style(f'\n{employee[1]}的绩效详情（{start_date} 至 {end_date}）：', fg='green', bold=True))
-    click.echo(tabulate(details, headers=headers, tablefmt=format))
+    
+    # 获取工作承担得分记录
+    workload_details = tracker.get_employee_workload_detail(employee_id, start_date, end_date)
+    if workload_details:
+        click.echo(click.style('\n工作承担得分：', fg='yellow'))
+        workload_headers = ['年份', '周数', '得分', '描述']
+        formatted_workload = []
+        for detail in workload_details:
+            score = detail[2]
+            score_str = click.style(f"{score:>6.2f}", fg='green' if score > 0 else 'red')
+            formatted_workload.append([
+                detail[3],  # 年份
+                detail[0],  # 周数
+                score_str,  # 得分
+                detail[4]   # 描述
+            ])
+        click.echo(tabulate(formatted_workload, headers=workload_headers, tablefmt=format))
+    
+    # 获取表现得分记录
+    performance_details = tracker.get_employee_performance_detail(employee_id, start_date, end_date)
+    if performance_details:
+        click.echo(click.style('\n表现得分：', fg='yellow'))
+        perf_headers = ['评分类别', '描述', '得分', '记录日期']
+        formatted_perf = []
+        for detail in performance_details:
+            score = detail[2]
+            score_str = click.style(f"{score:>6.2f}", fg='green' if score > 0 else 'red')
+            formatted_perf.append([
+                detail[0],  # 类别
+                detail[1],  # 描述
+                score_str, # 得分
+                detail[3]  # 日期
+            ])
+        click.echo(tabulate(formatted_perf, headers=perf_headers, tablefmt=format))
+    
+    if not workload_details and not performance_details:
+        click.echo('当前周期内暂无评分记录')
 
 @cli.command('toggle-emp')
 @click.option('--employee-id', prompt='员工ID', type=int, help='员工ID')

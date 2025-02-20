@@ -251,8 +251,31 @@ class PerformanceTracker:
             cursor = conn.execute(sql, (start_date, start_date, end_date, end_date, start_date, end_date))
             return cursor.fetchall(), categories
     
+    def get_employee_workload_detail(self, employee_id, start_date, end_date):
+        """获取指定员工在指定时间段内的工作承担得分记录"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT 
+                    week_number,
+                    ranking_percentage,
+                    score,
+                    year,
+                    description
+                FROM workload_scores
+                WHERE employee_id = ?
+                AND (year || '-' || PRINTF('%02d', week_number)) BETWEEN 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?)) 
+                    AND 
+                    (strftime('%Y', ?) || '-' || strftime('%W', ?))
+                ORDER BY year DESC, week_number DESC
+                """,
+                (employee_id, start_date, start_date, end_date, end_date)
+            )
+            return cursor.fetchall()
+    
     def get_employee_performance_detail(self, employee_id, start_date, end_date):
-        """获取指定员工在指定时间段内的详细绩效记录"""
+        """获取指定员工在指定时间段内的表现得分记录"""
         with sqlite3.connect(self.db.db_path) as conn:
             cursor = conn.execute(
                 """
