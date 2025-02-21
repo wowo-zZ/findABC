@@ -349,3 +349,33 @@ class PerformanceTracker:
                 "UPDATE performance_categories SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
                 (active, name)
             )
+
+    def get_all_categories(self):
+        """获取所有表现类别（包括已禁用的）"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT name, description, is_active FROM performance_categories ORDER BY name"
+            )
+            return cursor.fetchall()
+
+    def update_category(self, old_name, new_name, description, is_active):
+        """更新表现类别信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查新名称是否已存在（如果名称有变化）
+            if old_name != new_name:
+                cursor = conn.execute(
+                    "SELECT id FROM performance_categories WHERE name = ? AND name != ?",
+                    (new_name, old_name)
+                )
+                if cursor.fetchone():
+                    raise ValueError(f"类别名称 '{new_name}' 已存在")
+            
+            # 更新类别信息
+            conn.execute(
+                """
+                UPDATE performance_categories 
+                SET name = ?, description = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE name = ?
+                """,
+                (new_name, description, is_active, old_name)
+            )
