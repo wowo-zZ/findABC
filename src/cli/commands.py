@@ -551,11 +551,62 @@ def list_employees(format):
     # 使用fancy_grid作为默认格式，并添加表格边框
     click.echo(tabulate(formatted_data, headers=headers, tablefmt=format))
 
-@cli.command('add-cat')
+@cli.group('cat')
+def category():
+    """表现类别管理相关命令"""
+    pass
+
+@category.command('show')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+@click.option('--all', '-a', is_flag=True, help='显示所有类别（包括已禁用的）')
+def show_categories(format, all):
+    """显示表现类别信息"""
+    tracker = PerformanceTracker()
+    
+    # 获取类别信息
+    if all:
+        categories = tracker.get_all_categories()
+        title = '所有表现类别'
+    else:
+        categories = [(name, desc, True) for name, desc in tracker.get_active_categories()]
+        title = '已启用的表现类别'
+    
+    if not categories:
+        click.echo('暂无表现类别信息')
+        return
+    
+    # 显示类别信息
+    click.echo(click.style(f'\n{title}：', fg='green', bold=True))
+    headers = ['序号', '类别名称', '描述', '状态']
+    category_list = []
+    
+    for i, (name, description, is_active) in enumerate(categories, 1):
+        # 根据状态使用不同的颜色
+        if is_active:
+            status = click.style('已启用', fg='green')
+            row = [
+                click.style(str(i), fg='green'),
+                click.style(name, fg='green'),
+                click.style(description, fg='green'),
+                status
+            ]
+        else:
+            status = click.style('已禁用', fg='red')
+            row = [
+                click.style(str(i), fg='red'),
+                click.style(name, fg='red'),
+                click.style(description, fg='red'),
+                status
+            ]
+        category_list.append(row)
+    
+    click.echo(tabulate(category_list, headers=headers, tablefmt=format))
+
+@category.command('add')
 @click.option('--name', prompt='类别名称', help='表现类别名称')
 @click.option('--description', prompt='类别描述', help='表现类别描述')
 def add_category(name, description):
-    """添加新的表现类别 (add_category)"""
+    """添加新的表现类别"""
     tracker = PerformanceTracker()
     try:
         tracker.add_category(name, description)
@@ -565,11 +616,11 @@ def add_category(name, description):
     except Exception as e:
         click.echo(f'添加类别失败：{str(e)}')
 
-@cli.command('toggle-cat')
+@category.command('toggle')
 @click.option('--name', prompt='类别名称', help='表现类别名称')
 @click.option('--active/--inactive', prompt='是否启用', help='启用或禁用类别')
 def toggle_category(name, active):
-    """启用或禁用表现类别 (toggle_category)"""
+    """启用或禁用表现类别"""
     tracker = PerformanceTracker()
     try:
         tracker.toggle_category(name, active)
@@ -577,3 +628,246 @@ def toggle_category(name, active):
         click.echo(f'成功{status}类别: {name}')
     except Exception as e:
         click.echo(f'操作失败：{str(e)}')
+
+@category.command('change')
+def change_category():
+    """修改表现类别信息"""
+    tracker = PerformanceTracker()
+    
+    # 获取并显示所有表现类别
+    categories = tracker.get_all_categories()
+    if not categories:
+        click.echo('错误：未找到任何表现类别')
+        return
+    
+    # 显示所有类别
+    click.echo(click.style('\n当前所有表现类别：', fg='green'))
+    headers = ['序号', '类别名称', '描述', '状态']
+    category_list = []
+    for i, (name, description, is_active) in enumerate(categories, 1):
+        status = click.style('已启用', fg='green') if is_active else click.style('已禁用', fg='red')
+        category_list.append([i, name, description, status])
+    click.echo(tabulate(category_list, headers=headers))
+    
+    # 选择要修改的类别
+    while True:
+        category_input = click.prompt('\n请选择要修改的类别(输入序号或类别名称)')
+        try:
+            # 尝试通过序号选择
+            idx = int(category_input) - 1
+            if 0 <= idx < len(categories):
+                old_name = categories[idx][0]
+                break
+        except ValueError:
+            # 通过名称选择
+            if category_input in [cat[0] for cat in categories]:
+                old_name = category_input
+                break
+        click.echo('无效的选择，请重新输入')
+    
+    # 获取当前类别信息
+    old_category = next(cat for cat in categories if cat[0] == old_name)
+    
+    # 提示用户输入新的信息
+    click.echo(click.style('\n当前类别信息：', fg='yellow'))
+    click.echo(f'名称：{old_category[0]}')
+    click.echo(f'描述：{old_category[1]}')
+    click.echo(f'状态：{"已启用" if old_category[2] else "已禁用"}')
+    
+    # 获取新的信息
+    new_name = click.prompt('新名称（直接回车保持不变）', default=old_category[0])
+    new_description = click.prompt('新描述（直接回车保持不变）', default=old_category[1])
+    new_status = click.prompt(
+        '是否启用',
+        type=click.Choice(['y', 'n']),
+        default='y' if old_category[2] else 'n'
+    ) == 'y'
+    
+    # 确认修改
+    click.echo(click.style('\n请确认以下修改：', fg='yellow'))
+    if new_name != old_category[0]:
+        click.echo(f'名称：{old_category[0]} -> {new_name}')
+    if new_description != old_category[1]:
+        click.echo(f'描述：{old_category[1]} -> {new_description}')
+    if new_status != old_category[2]:
+        click.echo(f'状态：{"已启用" if old_category[2] else "已禁用"} -> {"已启用" if new_status else "已禁用"}')
+    
+    if not click.confirm('\n是否确认执行以上修改？'):
+        click.echo('操作已取消')
+        return
+    
+    try:
+        # 执行修改
+        tracker.update_category(old_name, new_name, new_description, new_status)
+        click.echo(click.style('\n类别信息修改成功！', fg='green'))
+    except Exception as e:
+        click.echo(f'修改失败：{str(e)}')
+
+@cli.command('add-env')
+@click.option('--event', prompt='事件描述', help='具体事件描述')
+def add_event_score(event):
+    """根据团队事件为多名员工同时加减分 (add_event_score)"""
+    tracker = PerformanceTracker()
+    
+    # 获取并显示所有启用的表现类别
+    categories = tracker.get_active_categories()
+    if not categories:
+        click.echo('错误：未找到任何可用的表现类别，请先添加类别')
+        return
+    
+    click.echo(click.style('\n可选的表现类别：', fg='green'))
+    for i, (name, description) in enumerate(categories, 1):
+        click.echo(f'{i}. {name} - {description}')
+    
+    # 获取表现类别
+    while True:
+        category_input = click.prompt('请选择表现类别(输入序号或类别名称)')
+        try:
+            # 尝试通过序号选择
+            idx = int(category_input) - 1
+            if 0 <= idx < len(categories):
+                category = categories[idx][0]  # 获取类别名称
+                break
+        except ValueError:
+            # 通过名称选择
+            if category_input in [cat[0] for cat in categories]:
+                category = category_input
+                break
+        click.echo('无效的选择，请重新输入')
+    
+    # 获取并显示所有激活状态的员工
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+        
+    active_employees = [emp for emp in employees if emp[12]]
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    # 显示员工列表供选择
+    click.echo(click.style("\n当前激活员工列表：", fg='green'))
+    for emp in active_employees:
+        click.echo(f"{emp[0]}: {emp[1]} ({emp[9]})")  # ID: 姓名 (部门)
+    
+    # 选择加分模式
+    mode = click.prompt(
+        '请选择加分模式',
+        type=click.Choice(['1', '2']),
+        show_choices=False,
+        prompt_suffix='\n1. 统一加分（为多名员工统一加分）\n2. 单独加分（为每名员工单独设置分值）\n请输入(1/2)：'
+    )
+    
+    employee_scores = []
+    if mode == '1':
+        # 统一加分模式
+        while True:
+            try:
+                # 获取统一分值
+                score_str = click.prompt('请输入统一分值（需要带+/-符号，如：+5 或 -3）')
+                if score_str[0] not in ('+', '-'):
+                    click.echo('错误：分值必须带有+或-符号')
+                    continue
+                score = float(score_str)
+                
+                # 获取员工ID列表
+                ids_input = click.prompt('请输入员工ID列表（多个ID用逗号分隔，如：1,2,3）')
+                employee_ids = [int(id.strip()) for id in ids_input.split(',')]
+                
+                # 验证所有ID是否有效
+                invalid_ids = [id for id in employee_ids if not any(emp[0] == id and emp[12] for emp in employees)]
+                if invalid_ids:
+                    click.echo(f'错误：以下ID无效或对应员工未激活：{invalid_ids}')
+                    continue
+                
+                # 为每个员工添加相同的分值
+                employee_scores = [(eid, score) for eid in employee_ids]
+                break
+                
+            except ValueError:
+                click.echo('错误：请输入有效的分值和ID列表')
+    else:
+        # 单独加分模式
+        while True:
+            score_input = click.prompt('请输入员工ID和分值（格式：ID1,分值1;ID2,分值2 例如：1,+5;2,-3）')
+            try:
+                # 解析输入
+                pairs = score_input.strip().split(';')
+                employee_scores = []
+                invalid_ids = []
+                
+                for pair in pairs:
+                    if not pair.strip():
+                        continue
+                    id_str, score_str = pair.strip().split(',')
+                    employee_id = int(id_str.strip())
+                    
+                    # 验证员工ID是否有效
+                    if not any(emp[0] == employee_id and emp[12] for emp in employees):
+                        invalid_ids.append(employee_id)
+                        continue
+                    
+                    # 解析分值（支持+/-符号）
+                    score_str = score_str.strip()
+                    if score_str[0] not in ('+', '-'):
+                        click.echo('错误：分值必须带有+或-符号')
+                        employee_scores = []
+                        break
+                    score = float(score_str)
+                    
+                    employee_scores.append((employee_id, score))
+                
+                if invalid_ids:
+                    click.echo(f'错误：以下ID无效或对应员工未激活：{invalid_ids}')
+                    continue
+                    
+                if employee_scores:
+                    break
+                    
+            except ValueError:
+                click.echo('错误：输入格式不正确，请使用正确的格式（ID1,分值1;ID2,分值2）')
+    
+    # 确认操作
+    click.echo(click.style('\n请确认以下操作：', fg='yellow'))
+    click.echo(f'事件描述：{event}')
+    click.echo(f'表现类别：{category}')
+    click.echo(f'加分模式：{"统一加分" if mode == "1" else "单独加分"}')
+    click.echo('\n参与员工及分值：')
+    
+    # 显示详细的加分信息
+    headers = ['姓名', '部门', '分值']
+    details = []
+    for emp_id, score in employee_scores:
+        emp = next(emp for emp in active_employees if emp[0] == emp_id)
+        score_str = click.style(f"{score:>+6.2f}", fg='green' if score > 0 else 'red')
+        details.append([emp[1], emp[9], score_str])
+    click.echo(tabulate(details, headers=headers))
+    
+    if not click.confirm('\n是否确认执行以上操作？'):
+        click.echo('操作已取消')
+        return
+    
+    # 执行加分操作
+    success_count = 0
+    for employee_id, score in employee_scores:
+        try:
+            description = f'团队事件：{event}'
+            tracker.add_performance_record(
+                employee_id=employee_id,
+                category=category,
+                description=description,
+                score=score
+            )
+            success_count += 1
+        except Exception as e:
+            click.echo(f'为员工ID {employee_id} 添加记录时出错：{str(e)}')
+    
+    # 显示执行结果
+    if success_count > 0:
+        click.echo(click.style(f'\n成功为 {success_count} 名员工添加得分记录：', fg='green'))
+        click.echo(f'类别：{category}')
+        click.echo(f'事件：{event}')
+        click.echo(f'记录时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+    else:
+        click.echo('操作失败：未能成功添加任何记录')
