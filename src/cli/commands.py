@@ -871,3 +871,113 @@ def add_event_score(event):
         click.echo(f'记录时间：{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
     else:
         click.echo('操作失败：未能成功添加任何记录')
+
+@cli.group('rec')
+def record():
+    """表现记录管理相关命令"""
+    pass
+
+@record.command('add')
+@click.pass_context
+def add_record(ctx):
+    """记录员工表现"""
+    # 将原来的 add-rec 命令的内容移到这里
+    # ... 原有代码 ...
+
+@record.command('change')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def change_record(format):
+    """修改表现记录"""
+    tracker = PerformanceTracker()
+    
+    # 获取当前绩效周期
+    start_date, end_date = tracker.get_current_performance_cycle()
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set-perf 命令）')
+        return
+    
+    # 获取并显示所有激活状态的员工
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+        
+    active_employees = [emp for emp in employees if emp[12]]
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    # 显示员工列表供选择
+    click.echo(click.style("\n当前激活员工列表：", fg='green'))
+    for emp in active_employees:
+        click.echo(f"{emp[0]}: {emp[1]} ({emp[9]})")  # ID: 姓名 (部门)
+    
+    # 选择员工
+    while True:
+        employee_id = click.prompt('请输入员工ID', type=int)
+        employee = next((emp for emp in active_employees if emp[0] == employee_id), None)
+        if employee:
+            break
+        click.echo('无效的员工ID，请重新输入')
+    
+    # 获取该员工在当前周期内的所有表现记录
+    records = tracker.get_employee_performance_records(employee_id, start_date, end_date)
+    if not records:
+        click.echo(f'在当前周期（{start_date} 至 {end_date}）内未找到该员工的表现记录')
+        return
+    
+    # 显示所有记录
+    click.echo(click.style(f'\n{employee[1]}的表现记录：', fg='yellow'))
+    headers = ['序号', '记录ID', '类别', '分值', '描述', '记录日期']
+    records_list = []
+    for i, record in enumerate(records, 1):
+        records_list.append([
+            i,
+            record[0],  # record_id
+            record[2],  # category_name
+            click.style(f"{record[3]:>+6.2f}", fg='green' if record[3] > 0 else 'red'),  # score
+            record[4],  # description
+            record[5]   # record_date
+        ])
+    click.echo(tabulate(records_list, headers=headers, tablefmt=format))
+    
+    # 选择要修改的记录
+    while True:
+        idx = click.prompt('\n请选择要修改的记录序号', type=int)
+        if 1 <= idx <= len(records):
+            record = records[idx - 1]
+            break
+        click.echo('无效的序号，请重新输入')
+    
+    # 获取新的分值
+    while True:
+        score_str = click.prompt('\n请输入新的分值（需要带+/-符号，如：+5 或 -3）')
+        try:
+            if score_str[0] not in ('+', '-'):
+                click.echo('错误：分值必须带有+或-符号')
+                continue
+            new_score = float(score_str)
+            break
+        except ValueError:
+            click.echo('错误：请输入有效的数字')
+    
+    # 获取新的描述
+    new_description = click.prompt('请输入新的描述（直接回车保持不变）', default=record[4])
+    
+    # 确认修改
+    click.echo(click.style('\n请确认以下修改：', fg='yellow'))
+    if new_score != record[3]:
+        click.echo(f'分值：{record[3]:>+6.2f} -> {new_score:>+6.2f}')
+    if new_description != record[4]:
+        click.echo(f'描述：{record[4]} -> {new_description}')
+    
+    if not click.confirm('\n是否确认执行以上修改？'):
+        click.echo('操作已取消')
+        return
+    
+    # 执行修改
+    try:
+        tracker.update_performance_record(record[0], new_score, new_description)
+        click.echo(click.style('\n记录修改成功！', fg='green'))
+    except Exception as e:
+        click.echo(f'修改失败：{str(e)}')

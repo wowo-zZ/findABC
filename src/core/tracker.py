@@ -379,3 +379,65 @@ class PerformanceTracker:
                 """,
                 (new_name, description, is_active, old_name)
             )
+
+    def get_performance_record(self, record_id):
+        """获取特定表现记录的详细信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT 
+                    pr.id,
+                    e.name as employee_name,
+                    pc.name as category_name,
+                    pr.score,
+                    pr.description,
+                    pr.record_date
+                FROM performance_records pr
+                JOIN employees e ON pr.employee_id = e.id
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pr.id = ?
+                """,
+                (record_id,)
+            )
+            return cursor.fetchone()
+
+    def update_performance_record(self, record_id, new_score, new_description):
+        """更新表现记录"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查记录是否存在
+            cursor = conn.execute("SELECT id FROM performance_records WHERE id = ?", (record_id,))
+            if not cursor.fetchone():
+                raise ValueError("记录不存在")
+            
+            # 更新记录
+            conn.execute(
+                """
+                UPDATE performance_records 
+                SET score = ?, description = ?
+                WHERE id = ?
+                """,
+                (new_score, new_description, record_id)
+            )
+
+    def get_employee_performance_records(self, employee_id, start_date, end_date):
+        """获取指定员工在指定时间段内的所有表现记录"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT 
+                    pr.id,
+                    e.name as employee_name,
+                    pc.name as category_name,
+                    pr.score,
+                    pr.description,
+                    pr.record_date
+                FROM performance_records pr
+                JOIN employees e ON pr.employee_id = e.id
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pr.employee_id = ? 
+                AND pr.record_date BETWEEN ? AND ?
+                ORDER BY pr.record_date DESC
+                """,
+                (employee_id, start_date, end_date)
+            )
+            return cursor.fetchall()
