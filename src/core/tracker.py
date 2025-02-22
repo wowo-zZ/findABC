@@ -6,16 +6,36 @@ import sqlite3
 from ..db.database import PerformanceDB
 
 class PerformanceTracker:
-    def __init__(self):
-        self.db = PerformanceDB()
+    def __init__(self, db_path=None):
+        """初始化跟踪器
+        
+        Args:
+            db_path: 可选的数据库路径
+        """
+        self.db = PerformanceDB(db_path) if db_path else PerformanceDB()
     
-    def add_employee(self, name, domain_account, gender, hometown, university, major, phone, department, position, join_date):
-        """添加新员工"""
+    def add_employee(self, name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date):
+        """添加新员工
+        
+        Args:
+            name: 姓名
+            domain_account: 域账号
+            gender: 性别
+            hometown: 家乡
+            university: 毕业院校
+            major: 专业
+            phone: 电话
+            id_card: 身份证号
+            department: 部门
+            position: 职级
+            join_date: 入职日期
+        """
         with sqlite3.connect(self.db.db_path) as conn:
             conn.execute(
-                "INSERT INTO employees (name, domain_account, gender, hometown, university, major, phone, department, position, join_date) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (name, domain_account, gender, hometown, university, major, phone, department, position, join_date)
+                """INSERT INTO employees 
+                   (name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (name, domain_account, gender, hometown, university, major, phone, id_card, department, position, join_date)
             )
     
     def add_performance_record(self, employee_id, category, description, score):
@@ -62,24 +82,27 @@ class PerformanceTracker:
             )
 
     def get_all_employees(self):
-        """获取所有员工的详细信息，按激活状态、职级职等从高到低排序"""
+        """获取所有员工信息"""
         with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT id, name, domain_account, gender, hometown, university, major, id_card, phone, department, position, join_date, is_active "
-                "FROM employees "
-                "ORDER BY "
-                "is_active DESC, "
-                "CASE "
-                "  WHEN position LIKE 'P4%' THEN 1 "
-                "  WHEN position LIKE 'P3%' THEN 2 "
-                "  WHEN position LIKE 'P2%' THEN 3 "
-                "END, "
-                "CASE "
-                "  WHEN position LIKE '%-3' THEN 1 "
-                "  WHEN position LIKE '%-2' THEN 2 "
-                "  WHEN position LIKE '%-1' THEN 3 "
-                "END"
-            )
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    domain_account,
+                    gender,
+                    hometown,
+                    university,
+                    major,
+                    phone,
+                    id_card,
+                    department,
+                    position,
+                    join_date,
+                    is_active,
+                    created_at
+                FROM employees
+                ORDER BY position, name
+            """)
             return cursor.fetchall()
     
     def get_employee_by_name(self, name):
@@ -94,14 +117,29 @@ class PerformanceTracker:
     def get_employee_detail(self, employee_id):
         """获取特定员工的详细信息"""
         with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT * FROM employees WHERE id = ?",
-                (employee_id,)
-            )
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    domain_account,
+                    gender,
+                    hometown,
+                    university,
+                    major,
+                    phone,
+                    id_card,
+                    department,
+                    position,
+                    join_date,
+                    is_active,
+                    created_at
+                FROM employees
+                WHERE id = ?
+            """, (employee_id,))
             return cursor.fetchone()
     
     def delete_employee(self, employee_id):
-        """删除指定员工及其相关记录"""
+        """删除指定员工"""
         with sqlite3.connect(self.db.db_path) as conn:
             # 检查员工是否存在
             cursor = conn.execute("SELECT id FROM employees WHERE id = ?", (employee_id,))
@@ -109,19 +147,13 @@ class PerformanceTracker:
                 raise ValueError("员工不存在")
             
             # 删除员工相关的所有记录
-            tables = [
-                'workload_scores',
-                'promotion_scores',
-                'technical_breakthrough_scores',
-                'experience_case_scores',
-                'performance_summary'
-            ]
+            conn.execute("DELETE FROM workload_scores WHERE employee_id = ?", (employee_id,))
+            conn.execute("DELETE FROM performance_records WHERE employee_id = ?", (employee_id,))
+            conn.execute("DELETE FROM promotion_scores WHERE employee_id = ?", (employee_id,))
+            conn.execute("DELETE FROM technical_breakthrough_scores WHERE employee_id = ?", (employee_id,))
+            conn.execute("DELETE FROM experience_case_scores WHERE employee_id = ?", (employee_id,))
             
-            # 删除关联表中的记录
-            for table in tables:
-                conn.execute(f"DELETE FROM {table} WHERE employee_id = ?", (employee_id,))
-            
-            # 删除员工记录
+            # 删除员工信息
             conn.execute("DELETE FROM employees WHERE id = ?", (employee_id,))
     
     def update_global_setting(self, key, value, description):
@@ -351,11 +383,18 @@ class PerformanceTracker:
             )
 
     def get_all_categories(self):
-        """获取所有表现类别（包括已禁用的）"""
+        """获取所有表现类别"""
         with sqlite3.connect(self.db.db_path) as conn:
-            cursor = conn.execute(
-                "SELECT name, description, is_active FROM performance_categories ORDER BY name"
-            )
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    description,
+                    is_active,
+                    created_at
+                FROM performance_categories
+                ORDER BY name
+            """)
             return cursor.fetchall()
 
     def update_category(self, old_name, new_name, description, is_active):
@@ -452,3 +491,117 @@ class PerformanceTracker:
             
             # 删除记录
             conn.execute("DELETE FROM performance_records WHERE id = ?", (record_id,))
+
+    def toggle_category_status(self, name, active):
+        """启用或禁用表现类别
+        
+        Args:
+            name: 类别名称
+            active: True 表示启用，False 表示禁用
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查类别是否存在
+            cursor = conn.execute("SELECT id FROM performance_categories WHERE name = ?", (name,))
+            if not cursor.fetchone():
+                raise ValueError(f"类别 '{name}' 不存在")
+            
+            # 更新类别状态
+            conn.execute(
+                "UPDATE performance_categories SET is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
+                (1 if active else 0, name)
+            )
+
+    def get_category_status(self, name):
+        """获取表现类别的当前状态
+        
+        Args:
+            name: 类别名称
+            
+        Returns:
+            bool|None: True表示启用，False表示禁用，None表示类别不存在
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT is_active FROM performance_categories WHERE name = ?",
+                (name,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else None
+
+    def get_category_detail(self, name):
+        """获取表现类别的详细信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    description,
+                    is_active,
+                    created_at,
+                    updated_at
+                FROM performance_categories
+                WHERE name = ?
+            """, (name,))
+            return cursor.fetchone()
+
+    def get_category_record_count(self, name):
+        """获取表现类别下的记录数量"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT COUNT(*)
+                FROM performance_records pr
+                JOIN performance_categories pc ON pr.category_id = pc.id
+                WHERE pc.name = ?
+            """, (name,))
+            return cursor.fetchone()[0]
+
+    def delete_category(self, name):
+        """删除表现类别及其关联记录
+        
+        Args:
+            name: 类别名称
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查类别是否存在
+            cursor = conn.execute("SELECT id FROM performance_categories WHERE name = ?", (name,))
+            category = cursor.fetchone()
+            if not category:
+                raise ValueError(f"类别 '{name}' 不存在")
+            
+            category_id = category[0]
+            
+            # 删除关联的表现记录
+            conn.execute("DELETE FROM performance_records WHERE category_id = ?", (category_id,))
+            
+            # 删除类别
+            conn.execute("DELETE FROM performance_categories WHERE id = ?", (category_id,))
+
+    def get_category_by_id(self, category_id):
+        """根据ID获取表现类别信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    description,
+                    is_active,
+                    created_at
+                FROM performance_categories
+                WHERE id = ?
+            """, (category_id,))
+            return cursor.fetchone()
+
+    def get_category_by_name(self, name):
+        """根据名称获取表现类别信息"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            cursor = conn.execute("""
+                SELECT 
+                    id,
+                    name,
+                    description,
+                    is_active,
+                    created_at
+                FROM performance_categories
+                WHERE name = ?
+            """, (name,))
+            return cursor.fetchone()
