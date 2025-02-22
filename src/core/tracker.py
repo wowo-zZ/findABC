@@ -441,3 +441,14 @@ class PerformanceTracker:
                 (employee_id, start_date, end_date)
             )
             return cursor.fetchall()
+
+    def delete_performance_record(self, record_id):
+        """删除表现记录"""
+        with sqlite3.connect(self.db.db_path) as conn:
+            # 检查记录是否存在
+            cursor = conn.execute("SELECT id FROM performance_records WHERE id = ?", (record_id,))
+            if not cursor.fetchone():
+                raise ValueError("记录不存在")
+            
+            # 删除记录
+            conn.execute("DELETE FROM performance_records WHERE id = ?", (record_id,))

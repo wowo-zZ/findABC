@@ -878,11 +878,99 @@ def record():
     pass
 
 @record.command('add')
-@click.pass_context
-def add_record(ctx):
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def add_record(format):
     """记录员工表现"""
-    # 将原来的 add-rec 命令的内容移到这里
-    # ... 原有代码 ...
+    tracker = PerformanceTracker()
+    
+    # 获取当前绩效周期
+    start_date, end_date = tracker.get_current_performance_cycle()
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set-perf 命令）')
+        return
+    
+    # 获取并显示所有激活状态的员工
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+        
+    active_employees = [emp for emp in employees if emp[12]]
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    # 显示员工列表供选择
+    click.echo(click.style("\n当前激活员工列表：", fg='green'))
+    for emp in active_employees:
+        click.echo(f"{emp[0]}: {emp[1]} ({emp[9]})")  # ID: 姓名 (部门)
+    
+    # 选择员工
+    while True:
+        employee_id = click.prompt('请输入员工ID', type=int)
+        employee = next((emp for emp in active_employees if emp[0] == employee_id), None)
+        if employee:
+            break
+        click.echo('无效的员工ID，请重新输入')
+    
+    # 获取并显示所有可用的表现类别
+    categories = tracker.get_active_categories()
+    if not categories:
+        click.echo('错误：未找到任何可用的表现类别')
+        return
+    
+    click.echo(click.style('\n可选的表现类别：', fg='green'))
+    for i, (name, description) in enumerate(categories, 1):
+        click.echo(f'{i}. {name} - {description}')
+    
+    # 选择表现类别
+    while True:
+        category_input = click.prompt('请选择表现类别(输入序号或类别名称)')
+        try:
+            # 尝试通过序号选择
+            idx = int(category_input) - 1
+            if 0 <= idx < len(categories):
+                category = categories[idx][0]
+                break
+        except ValueError:
+            # 通过名称选择
+            if category_input in [cat[0] for cat in categories]:
+                category = category_input
+                break
+        click.echo('无效的选择，请重新输入')
+    
+    # 获取分值
+    while True:
+        score_str = click.prompt('请输入分值（需要带+/-符号，如：+5 或 -3）')
+        try:
+            if score_str[0] not in ('+', '-'):
+                click.echo('错误：分值必须带有+或-符号')
+                continue
+            score = float(score_str)
+            break
+        except ValueError:
+            click.echo('错误：请输入有效的数字')
+    
+    # 获取描述
+    description = click.prompt('请输入表现描述')
+    
+    # 确认添加
+    click.echo(click.style('\n请确认以下信息：', fg='yellow'))
+    click.echo(f'员工：{employee[1]}')
+    click.echo(f'类别：{category}')
+    click.echo(f'分值：{score:>+6.2f}')
+    click.echo(f'描述：{description}')
+    
+    if not click.confirm('\n是否确认添加？'):
+        click.echo('操作已取消')
+        return
+    
+    # 执行添加
+    try:
+        tracker.add_performance_record(employee_id, category, description, score)
+        click.echo(click.style('\n记录添加成功！', fg='green'))
+    except Exception as e:
+        click.echo(f'添加失败：{str(e)}')
 
 @record.command('change')
 @click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
@@ -981,3 +1069,87 @@ def change_record(format):
         click.echo(click.style('\n记录修改成功！', fg='green'))
     except Exception as e:
         click.echo(f'修改失败：{str(e)}')
+
+@record.command('del')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+def delete_record(format):
+    """删除表现记录"""
+    tracker = PerformanceTracker()
+    
+    # 获取当前绩效周期
+    start_date, end_date = tracker.get_current_performance_cycle()
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set-perf 命令）')
+        return
+    
+    # 获取并显示所有激活状态的员工
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+        
+    active_employees = [emp for emp in employees if emp[12]]
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    # 显示员工列表供选择
+    click.echo(click.style("\n当前激活员工列表：", fg='green'))
+    for emp in active_employees:
+        click.echo(f"{emp[0]}: {emp[1]} ({emp[9]})")  # ID: 姓名 (部门)
+    
+    # 选择员工
+    while True:
+        employee_id = click.prompt('请输入员工ID', type=int)
+        employee = next((emp for emp in active_employees if emp[0] == employee_id), None)
+        if employee:
+            break
+        click.echo('无效的员工ID，请重新输入')
+    
+    # 获取该员工在当前周期内的所有表现记录
+    records = tracker.get_employee_performance_records(employee_id, start_date, end_date)
+    if not records:
+        click.echo(f'在当前周期（{start_date} 至 {end_date}）内未找到该员工的表现记录')
+        return
+    
+    # 显示所有记录
+    click.echo(click.style(f'\n{employee[1]}的表现记录：', fg='yellow'))
+    headers = ['序号', '记录ID', '类别', '分值', '描述', '记录日期']
+    records_list = []
+    for i, record in enumerate(records, 1):
+        records_list.append([
+            i,
+            record[0],  # record_id
+            record[2],  # category_name
+            click.style(f"{record[3]:>+6.2f}", fg='green' if record[3] > 0 else 'red'),  # score
+            record[4],  # description
+            record[5]   # record_date
+        ])
+    click.echo(tabulate(records_list, headers=headers, tablefmt=format))
+    
+    # 选择要删除的记录
+    while True:
+        idx = click.prompt('\n请选择要删除的记录序号', type=int)
+        if 1 <= idx <= len(records):
+            record = records[idx - 1]
+            break
+        click.echo('无效的序号，请重新输入')
+    
+    # 确认删除
+    click.echo(click.style('\n请确认要删除以下记录：', fg='yellow'))
+    click.echo(f'员工：{employee[1]}')
+    click.echo(f'类别：{record[2]}')
+    click.echo(f'分值：{record[3]:>+6.2f}')
+    click.echo(f'描述：{record[4]}')
+    click.echo(f'记录日期：{record[5]}')
+    
+    if not click.confirm('\n是否确认删除？', abort=True):
+        click.echo('操作已取消')
+        return
+    
+    # 执行删除
+    try:
+        tracker.delete_performance_record(record[0])
+        click.echo(click.style('\n记录删除成功！', fg='green'))
+    except Exception as e:
+        click.echo(f'删除失败：{str(e)}')
