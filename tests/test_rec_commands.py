@@ -18,4 +18,24 @@ def test_rec_change(runner, sample_data):
     # 然后修改这条记录
     result = runner.invoke(cli, ['rec', 'change'], input='1\n1\n+8\n完成新功能开发并优化性能\ny\n')
     assert result.exit_code == 0
-    assert '记录修改成功' in result.output 
+    assert '记录修改成功' in result.output
+
+def test_rec_list(runner, sample_data):
+    """测试列出表现记录命令"""
+    # 先添加一些记录
+    runner.invoke(cli, ['rec', 'add'], input='1\n1\n+5\n完成新功能开发\n')
+    runner.invoke(cli, ['rec', 'add'], input='1\n1\n-2\n代码质量问题\n')
+    
+    # 测试列出记录
+    result = runner.invoke(cli, ['rec', 'list'])
+    assert result.exit_code == 0
+    assert '完成新功能开发' in result.output
+    assert '代码质量问题' in result.output
+    assert '+5.00' in result.output
+    assert '-2.00' in result.output
+
+def test_rec_list_empty(runner, sample_data):
+    """测试当没有记录时的情况"""
+    result = runner.invoke(cli, ['rec', 'list'])
+    assert result.exit_code == 0
+    assert '暂无表现记录' in result.output 

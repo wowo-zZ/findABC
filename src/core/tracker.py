@@ -605,3 +605,38 @@ class PerformanceTracker:
                 WHERE name = ?
             """, (name,))
             return cursor.fetchone()
+
+    def get_all_performance_records(self, start_date=None, end_date=None):
+        """获取所有表现记录
+        
+        Args:
+            start_date: 开始日期，可选
+            end_date: 结束日期，可选
+            
+        Returns:
+            list: 记录列表，每条记录包含：记录ID、员工姓名、部门、类别、分值、描述、记录日期
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            query = """
+                SELECT 
+                    pr.id,
+                    e.name as employee_name,
+                    e.department,
+                    pc.name as category_name,
+                    pr.score,
+                    pr.description,
+                    pr.record_date
+                FROM performance_records pr
+                JOIN employees e ON pr.employee_id = e.id
+                JOIN performance_categories pc ON pr.category_id = pc.id
+            """
+            
+            params = []
+            if start_date and end_date:
+                query += " WHERE pr.record_date BETWEEN ? AND ?"
+                params.extend([start_date, end_date])
+            
+            query += " ORDER BY pr.record_date DESC, e.name"
+            
+            cursor = conn.execute(query, params)
+            return cursor.fetchall()

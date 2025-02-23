@@ -1045,3 +1045,42 @@ def set_scoring_rule(category, weight, description):
         click.echo(f'成功更新评分规则：{category}')
     except Exception as e:
         click.echo(f'设置失败：{str(e)}')
+
+@record.command('list')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+@click.option('--all', '-a', is_flag=True, help='显示所有记录（不限制在当前绩效周期内）')
+def list_records(format, all):
+    """列出表现记录"""
+    tracker = PerformanceTracker()
+    
+    # 获取当前绩效周期
+    start_date, end_date = tracker.get_current_performance_cycle()
+    if not start_date or not end_date:
+        click.echo('请先设置绩效周期（使用 set perf 命令）')
+        return
+    
+    # 获取记录
+    records = tracker.get_all_performance_records(None if all else start_date, None if all else end_date)
+    if not records:
+        click.echo('暂无表现记录')
+        return
+    
+    # 显示记录
+    click.echo(click.style(f'\n表现记录列表（{start_date} 至 {end_date}）：', fg='blue'))
+    
+    headers = ['记录ID', '员工', '部门', '类别', '分值', '描述', '记录日期']
+    table_data = []
+    
+    for record in records:
+        score_str = click.style(f"{record[4]:>+6.2f}", fg='green' if record[4] > 0 else 'red')
+        table_data.append([
+            record[0],  # 记录ID
+            record[1],  # 员工姓名
+            record[2],  # 部门
+            record[3],  # 类别
+            score_str,  # 分值
+            record[5],  # 描述
+            record[6]   # 记录日期
+        ])
+    
+    click.echo(tabulate(table_data, headers=headers, tablefmt=format))
