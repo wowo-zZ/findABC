@@ -640,3 +640,104 @@ class PerformanceTracker:
             
             cursor = conn.execute(query, params)
             return cursor.fetchall()
+
+    def get_all_workload_records(self, start_date=None, end_date=None):
+        """获取所有工作量记录
+        
+        Args:
+            start_date: 开始日期，可选
+            end_date: 结束日期，可选
+            
+        Returns:
+            list: 记录列表，每条记录包含：周数、员工姓名、部门、年份、排名百分比、得分、描述
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            query = """
+                SELECT 
+                    ws.week_number,
+                    e.name as employee_name,
+                    e.department,
+                    ws.year,
+                    ws.ranking_percentage,
+                    ws.score,
+                    ws.description
+                FROM workload_scores ws
+                JOIN employees e ON ws.employee_id = e.id
+            """
+            
+            params = []
+            if start_date and end_date:
+                # 将日期转换为年和周
+                query += """ 
+                    WHERE (ws.year || '-' || PRINTF('%02d', ws.week_number)) BETWEEN 
+                        (strftime('%Y', ?) || '-' || strftime('%W', ?)) 
+                        AND 
+                        (strftime('%Y', ?) || '-' || strftime('%W', ?))
+                """
+                params.extend([start_date, start_date, end_date, end_date])
+            
+            query += " ORDER BY ws.year DESC, ws.week_number DESC, e.name"
+            
+            cursor = conn.execute(query, params)
+            return cursor.fetchall()
+
+    def get_workload_records_by_week(self, week, year):
+        """获取指定周的工作量记录
+        
+        Args:
+            week: 周数（1-53）
+            year: 年份
+            
+        Returns:
+            list: 记录列表，每条记录包含：周数、员工姓名、部门、年份、排名百分比、得分、描述
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            query = """
+                SELECT 
+                    ws.week_number,
+                    e.name as employee_name,
+                    e.department,
+                    ws.year,
+                    ws.ranking_percentage,
+                    ws.score,
+                    ws.description
+                FROM workload_scores ws
+                JOIN employees e ON ws.employee_id = e.id
+                WHERE ws.week_number = ? AND ws.year = ?
+                ORDER BY ws.ranking_percentage ASC, e.name
+            """
+            
+            cursor = conn.execute(query, (week, year))
+            return cursor.fetchall()
+
+    def get_workload_weeks(self, year):
+        """获取指定年份已记录的工作周
+        
+        Args:
+            year: 年份
+            
+        Returns:
+            list: 周数列表
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            query = """
+                SELECT DISTINCT week_number
+                FROM workload_scores
+                WHERE year = ?
+                ORDER BY week_number
+            """
+            cursor = conn.execute(query, (year,))
+            return cursor.fetchall()
+
+    def delete_workload_records(self, week, year):
+        """删除指定周的工作量记录
+        
+        Args:
+            week: 周数
+            year: 年份
+        """
+        with sqlite3.connect(self.db.db_path) as conn:
+            conn.execute("""
+                DELETE FROM workload_scores
+                WHERE week_number = ? AND year = ?
+            """, (week, year))

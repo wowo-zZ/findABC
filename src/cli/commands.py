@@ -7,7 +7,7 @@ import subprocess
 import os
 from pathlib import Path
 from tabulate import tabulate
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 
 @click.group()
@@ -84,6 +84,11 @@ def show():
 @cli.group('set')
 def settings():
     """系统设置相关命令"""
+    pass
+
+@cli.group()
+def work():
+    """工作量管理"""
     pass
 
 @employee.command('add')
@@ -1084,3 +1089,336 @@ def list_records(format, all):
         ])
     
     click.echo(tabulate(table_data, headers=headers, tablefmt=format))
+
+@record.command('work')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+@click.option('--all', '-a', is_flag=True, help='显示所有记录（不限制在当前绩效周期内）')
+@click.option('--week', '-w', type=int, help='查看指定周的记录')
+@click.option('--year', '-y', type=int, default=lambda: datetime.now().year, help='查看指定年份的记录')
+def list_workload_records(format, all, week, year):
+    """列出工作量记录"""
+    tracker = PerformanceTracker()
+    
+    if week:
+        # 查看指定周的记录
+        if not 1 <= week <= 53:
+            click.echo('无效的周数，请输入1-53之间的数字')
+            return
+        
+        # 获取指定周的起止日期
+        first_day = datetime(year, 1, 1)
+        week_start = first_day - timedelta(days=first_day.isoweekday() - 1)
+        week_start = week_start + timedelta(weeks=week-1)
+        week_end = week_start + timedelta(days=6)
+        
+        # 验证周数是否属于指定年份
+        if week_start.isocalendar()[0] != year:
+            click.echo(f'第{week}周不属于{year}年')
+            return
+        
+        # 获取指定周的记录
+        records = tracker.get_workload_records_by_week(week, year)
+        if not records:
+            click.echo(f'{year}年第{week}周暂无工作量记录')
+            return
+        
+        # 显示记录
+        click.echo(click.style(
+            f'\n{year}年第{week}周工作量记录（{week_start.strftime("%m.%d")}-{week_end.strftime("%m.%d")}）：',
+            fg='blue'
+        ))
+    else:
+        # 获取当前绩效周期
+        start_date, end_date = tracker.get_current_performance_cycle()
+        if not start_date or not end_date:
+            click.echo('请先设置绩效周期（使用 set perf 命令）')
+            return
+        
+        # 获取记录
+        records = tracker.get_all_workload_records(None if all else start_date, None if all else end_date)
+        if not records:
+            click.echo('暂无工作量记录')
+            return
+        
+        # 显示记录
+        click.echo(click.style(f'\n工作量记录列表（{start_date} 至 {end_date}）：', fg='blue'))
+    
+    headers = ['员工', '部门', '年份', '周数', '排名百分比', '得分', '描述']
+    table_data = []
+    
+    for record in records:
+        score_str = click.style(f"{record[5]:>+6.2f}", fg='green' if record[5] > 0 else 'red')
+        percentage_str = f"{record[4]:>6.2f}%"
+        table_data.append([
+            record[1],  # 员工姓名
+            record[2],  # 部门
+            record[3],  # 年份
+            record[0],  # 周数
+            percentage_str,  # 排名百分比
+            score_str,  # 得分
+            record[6]   # 描述
+        ])
+    
+    click.echo(tabulate(table_data, headers=headers, tablefmt=format))
+
+def get_week_prompt():
+    """获取周数提示信息"""
+    now = datetime.now()
+    # 使用 isocalendar() 获取 ISO 周数
+    year, week, _ = now.isocalendar()
+    return f'输入第几周（1-53）或输入"all"查看所有周 [当前第{week}周]'
+
+@work.command('add')
+@click.option('--week', prompt=get_week_prompt(), type=str, help='输入第几周（1-53）或输入"all"查看所有周')
+def add_workload(week):
+    """记录每周工作量排名"""
+    now = datetime.now()
+    year = now.year
+    
+    if week.lower() == 'all':
+        # 显示所有周的信息
+        all_weeks_info = []
+        # 获取本年第一天和最后一天
+        first_day = datetime(year, 1, 1)
+        last_day = datetime(year, 12, 31)
+        
+        # 获取本年第一周的开始日期
+        first_week_start = first_day - timedelta(days=first_day.isoweekday() - 1)
+        
+        current_date = first_week_start
+        while current_date <= last_day:
+            iso_year, iso_week, _ = current_date.isocalendar()
+            if iso_year == year:
+                week_start = current_date
+                week_end = current_date + timedelta(days=6)
+                all_weeks_info.append(
+                    f'{iso_week}. 第{iso_week}周：{week_start.strftime("%m.%d")}-{week_end.strftime("%m.%d")}'
+                )
+            current_date += timedelta(days=7)
+        
+        click.echo(click.style('\n本年度所有周：', fg='green', bold=True))
+        click.echo('\n'.join(all_weeks_info))
+        
+        # 让用户重新选择周数
+        week = click.prompt('请输入要记录的周数', type=int)
+    else:
+        try:
+            week = int(week)
+        except ValueError:
+            click.echo('请输入有效的周数或"all"')
+            return
+    
+    if not 1 <= week <= 53:
+        click.echo('无效的周数，请输入1-53之间的数字')
+        return
+    
+    # 验证周数是否属于当前年份
+    test_date = datetime(year, 1, 1) + timedelta(weeks=week-1)
+    if test_date.isocalendar()[0] != year:
+        click.echo(f'第{week}周不属于{year}年')
+        return
+
+    tracker = PerformanceTracker()
+    
+    # 检查是否已有记录
+    existing_record = tracker.get_workload_record(week, year)
+    if existing_record:
+        if not click.confirm('该周已有工作量记录，是否要修改？'):
+            return
+    
+    # 获取所有员工列表
+    employees = tracker.get_all_employees()
+    if not employees:
+        click.echo('暂无员工信息')
+        return
+    
+    # 过滤出激活状态的员工
+    active_employees = [emp for emp in employees if emp[12]]  # emp[12]是is_active字段
+    if not active_employees:
+        click.echo('暂无激活状态的员工')
+        return
+    
+    click.echo(click.style('\n当前激活员工列表：', fg='green', bold=True))
+    headers = ['ID', '姓名', '部门', '职位']
+    click.echo(tabulate([(emp[0], emp[1], emp[9], emp[10]) for emp in active_employees], headers=headers))
+    
+    click.echo('\n请输入员工姓名，按工作量从高到低排序（空格分隔）：')
+    while True:
+        try:
+            input_names = click.prompt('员工姓名').strip().split()
+            
+            # 验证输入的姓名是否都有效，并获取对应的员工ID
+            employee_dict = {emp[1]: emp[0] for emp in active_employees}  # 建立姓名到ID的映射
+            invalid_names = [name for name in input_names if name not in employee_dict]
+            
+            if invalid_names:
+                click.echo(f'以下姓名无效：{"、".join(invalid_names)}，请重新输入')
+                continue
+            
+            if len(input_names) != len(active_employees):
+                missing_names = set(emp[1] for emp in active_employees) - set(input_names)
+                click.echo(f'请输入所有激活状态员工的姓名，当前缺少：{", ".join(missing_names)}')
+                continue
+            
+            if len(input_names) != len(set(input_names)):
+                # 找出重复的姓名
+                duplicate_names = [name for name in input_names if input_names.count(name) > 1]
+                duplicate_names = list(set(duplicate_names))  # 去重，每个重复姓名只显示一次
+                click.echo(f'以下员工姓名有重复：{"、".join(duplicate_names)}，请重新输入')
+                continue
+            
+            # 将姓名转换为ID
+            employee_ids = [employee_dict[name] for name in input_names]
+            break
+        except ValueError:
+            click.echo('输入格式错误，请输入有效的员工姓名（用空格分隔）')
+    
+    # 计算每个员工的得分
+    total_employees = len(employee_ids)
+    top_30_count = int(total_employees * 0.3)
+    mid_30_count = int(total_employees * 0.3)
+    
+    scores = []
+    for i, eid in enumerate(employee_ids):
+        if i < top_30_count:
+            score = 10
+        elif i < top_30_count + mid_30_count:
+            score = 8
+        else:
+            score = 7
+        scores.append((eid, score))
+    
+    # 显示评分结果
+    click.echo('\n评分结果：')
+    result_data = []
+    for eid, score in scores:
+        emp = next(emp for emp in employees if emp[0] == eid)
+        result_data.append([emp[1], score])
+    
+    click.echo(tabulate(result_data, headers=['姓名', '得分']))
+    
+    if click.confirm('确认保存以上评分结果？'):
+        # 保存到数据库
+        for eid, score in scores:
+            emp = next(emp for emp in employees if emp[0] == eid)
+            ranking_percentage = employee_ids.index(eid) / total_employees * 100
+            tracker.add_workload_score(eid, week, year, ranking_percentage, score, 
+                                     f'{year}年第{week}周工作量评分')
+        
+        click.echo('评分结果已保存')
+
+@work.command('list')
+@click.option('--format', '-f', default='simple', help='输出格式 (simple/grid/fancy_grid)')
+@click.option('--all', '-a', is_flag=True, help='显示所有记录（不限制在当前绩效周期内）')
+@click.option('--week', '-w', type=int, help='查看指定周的记录')
+@click.option('--year', '-y', type=int, default=lambda: datetime.now().year, help='查看指定年份的记录')
+def list_workload(format, all, week, year):
+    """列出工作量记录"""
+    tracker = PerformanceTracker()
+    
+    if week:
+        # 查看指定周的记录
+        if not 1 <= week <= 53:
+            click.echo('无效的周数，请输入1-53之间的数字')
+            return
+        
+        # 获取指定周的起止日期
+        first_day = datetime(year, 1, 1)
+        week_start = first_day - timedelta(days=first_day.isoweekday() - 1)
+        week_start = week_start + timedelta(weeks=week-1)
+        week_end = week_start + timedelta(days=6)
+        
+        # 验证周数是否属于指定年份
+        if week_start.isocalendar()[0] != year:
+            click.echo(f'第{week}周不属于{year}年')
+            return
+        
+        # 获取指定周的记录
+        records = tracker.get_workload_records_by_week(week, year)
+        if not records:
+            click.echo(f'{year}年第{week}周暂无工作量记录')
+            return
+        
+        # 显示记录
+        click.echo(click.style(
+            f'\n{year}年第{week}周工作量记录（{week_start.strftime("%m.%d")}-{week_end.strftime("%m.%d")}）：',
+            fg='blue'
+        ))
+    
+    headers = ['员工', '部门', '年份', '周数', '排名百分比', '得分', '描述']
+    table_data = []
+    
+    for record in records:
+        score_str = click.style(f"{record[5]:>+6.2f}", fg='green' if record[5] > 0 else 'red')
+        percentage_str = f"{record[4]:>6.2f}%"
+        table_data.append([
+            record[1],  # 员工姓名
+            record[2],  # 部门
+            record[3],  # 年份
+            record[0],  # 周数
+            percentage_str,  # 排名百分比
+            score_str,  # 得分
+            record[6]   # 描述
+        ])
+    
+    click.echo(tabulate(table_data, headers=headers, tablefmt=format))
+
+@work.command('del')
+@click.option('--week', '-w', type=int, help='要删除的周数')
+@click.option('--year', '-y', type=int, default=lambda: datetime.now().year, help='年份')
+@click.option('--force', '-f', is_flag=True, help='强制删除，不进行确认')
+def delete_workload(week, year, force):
+    """删除工作量记录"""
+    if not week:
+        # 显示可选的周数列表
+        tracker = PerformanceTracker()
+        records = tracker.get_workload_weeks(year)
+        if not records:
+            click.echo(f'{year}年暂无工作量记录')
+            return
+        
+        click.echo(click.style(f'\n{year}年已记录的工作周：', fg='blue'))
+        for record in records:
+            week_num = record[0]
+            first_day = datetime(year, 1, 1)
+            week_start = first_day - timedelta(days=first_day.isoweekday() - 1)
+            week_start = week_start + timedelta(weeks=week_num-1)
+            week_end = week_start + timedelta(days=6)
+            click.echo(f'第{week_num}周（{week_start.strftime("%m.%d")}-{week_end.strftime("%m.%d")}）')
+        
+        week = click.prompt('请选择要删除的周数', type=int)
+    
+    if not 1 <= week <= 53:
+        click.echo('无效的周数，请输入1-53之间的数字')
+        return
+    
+    tracker = PerformanceTracker()
+    
+    # 获取该周的记录
+    records = tracker.get_workload_records_by_week(week, year)
+    if not records:
+        click.echo(f'{year}年第{week}周暂无工作量记录')
+        return
+    
+    # 显示将要删除的记录
+    click.echo(click.style(f'\n{year}年第{week}周的工作量记录：', fg='blue'))
+    headers = ['员工', '部门', '排名百分比', '得分']
+    table_data = []
+    for record in records:
+        score_str = click.style(f"{record[5]:>+6.2f}", fg='green' if record[5] > 0 else 'red')
+        percentage_str = f"{record[4]:>6.2f}%"
+        table_data.append([
+            record[1],  # 员工姓名
+            record[2],  # 部门
+            percentage_str,  # 排名百分比
+            score_str,  # 得分
+        ])
+    click.echo(tabulate(table_data, headers=headers))
+    
+    if not force and not click.confirm('\n确定要删除这些记录吗？此操作不可恢复'):
+        click.echo('操作已取消')
+        return
+    
+    # 删除记录
+    tracker.delete_workload_records(week, year)
+    click.echo(click.style('\n成功删除工作量记录', fg='green'))

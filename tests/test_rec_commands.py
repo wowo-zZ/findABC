@@ -38,4 +38,58 @@ def test_rec_list_empty(runner, sample_data):
     """测试当没有记录时的情况"""
     result = runner.invoke(cli, ['rec', 'list'])
     assert result.exit_code == 0
-    assert '暂无表现记录' in result.output 
+    assert '暂无表现记录' in result.output
+
+def test_rec_work(runner, sample_data):
+    """测试列出工作量记录命令"""
+    # 先添加一些工作量记录
+    tracker = sample_data
+    tracker.add_workload_score(
+        employee_id=1,
+        week=1,
+        year=2024,
+        ranking_percentage=85.5,
+        score=8.5,
+        description="完成所有计划任务"
+    )
+    
+    result = runner.invoke(cli, ['rec', 'work'])
+    assert result.exit_code == 0
+    assert '张三' in result.output
+    assert '研发部' in result.output
+    assert '85.50%' in result.output
+    assert '+8.50' in result.output
+    assert '完成所有计划任务' in result.output
+
+def test_rec_work_empty(runner, sample_data):
+    """测试当没有工作量记录时的情况"""
+    result = runner.invoke(cli, ['rec', 'work'])
+    assert result.exit_code == 0
+    assert '暂无工作量记录' in result.output
+
+def test_rec_work_by_week(runner, sample_data):
+    """测试按周查看工作量记录命令"""
+    # 先添加一些工作量记录
+    tracker = sample_data
+    tracker.add_workload_score(
+        employee_id=1,
+        week=1,
+        year=2024,
+        ranking_percentage=85.5,
+        score=8.5,
+        description="完成所有计划任务"
+    )
+    
+    result = runner.invoke(cli, ['rec', 'work', '--week', '1', '--year', '2024'])
+    assert result.exit_code == 0
+    assert '张三' in result.output
+    assert '研发部' in result.output
+    assert '85.50%' in result.output
+    assert '+8.50' in result.output
+    assert '完成所有计划任务' in result.output
+
+def test_rec_work_by_week_empty(runner, sample_data):
+    """测试查看不存在记录的周"""
+    result = runner.invoke(cli, ['rec', 'work', '--week', '2', '--year', '2024'])
+    assert result.exit_code == 0
+    assert '暂无工作量记录' in result.output 
