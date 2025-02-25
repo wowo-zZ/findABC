@@ -12,44 +12,42 @@ import sqlite3
 
 @click.group()
 def cli():
-    """员工绩效跟踪系统 - 命令说明
+    """员工绩效跟踪系统
 
-    主要命令组：
-    
+    主要功能：
+
     \b
-    emp  - 员工管理
-      add    : 添加新员工
-      del    : 删除员工
-      list   : 查看员工列表
-      show   : 查看员工详情
-      toggle : 激活/禁用员工
-    
+    1. 员工管理 (emp)
+       - 添加、修改、删除员工信息
+       - 查看员工列表和详情
+
     \b
-    cat  - 表现类别管理
-      list   : 查看类别列表
-      add    : 添加类别
-      toggle : 启用/禁用类别
-      change : 修改类别信息
-    
+    2. 表现类别管理 (cat)
+       - 添加、修改、删除表现类别
+       - 查看类别列表
+
     \b
-    rec  - 表现记录管理
-      add    : 添加表现记录
-      del    : 删除表现记录
-      change : 修改表现记录
-      env    : 记录团队事件
-    
+    3. 表现记录管理 (rec)
+       - 添加、修改、删除表现记录
+       - 查看表现记录列表
+       - 记录团队事件
+
     \b
-    show - 绩效查看
-      perf   : 查看绩效统计
-      detail : 查看详细记录
-    
+    4. 工作量管理 (work)
+       - 记录每周工作量排名
+       - 查看工作量记录
+       - 删除工作量记录
+
     \b
-    set  - 系统设置
-      dept   : 设置默认部门
-      perf   : 设置绩效周期
-      rule   : 设置评分规则
-    
-    使用 perf COMMAND --help 查看具体命令的帮助信息
+    5. 绩效统计 (show)
+       - 查看绩效统计
+       - 查看详细记录
+
+    \b
+    6. 系统设置 (set)
+       - 设置默认部门
+       - 设置绩效周期
+       - 设置评分规则
     """
     pass
 
@@ -1344,7 +1342,23 @@ def list_workload(format, all, week, year):
             f'\n{year}年第{week}周工作量记录（{week_start.strftime("%m.%d")}-{week_end.strftime("%m.%d")}）：',
             fg='blue'
         ))
+    else:
+        # 获取当前绩效周期
+        start_date, end_date = tracker.get_current_performance_cycle()
+        if not start_date or not end_date:
+            click.echo('请先设置绩效周期（使用 set perf 命令）')
+            return
+        
+        # 获取记录
+        records = tracker.get_all_workload_records(None if all else start_date, None if all else end_date)
+        if not records:
+            click.echo('暂无工作量记录')
+            return
+        
+        # 显示记录
+        click.echo(click.style(f'\n工作量记录列表（{start_date} 至 {end_date}）：', fg='blue'))
     
+    # 显示记录表格
     headers = ['员工', '部门', '年份', '周数', '排名百分比', '得分', '描述']
     table_data = []
     
