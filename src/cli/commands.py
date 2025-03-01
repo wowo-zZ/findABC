@@ -938,10 +938,11 @@ def show_performance_summary(format):
     click.echo(click.style(f'\n当前绩效周期（{start_date} 至 {end_date}）统计：', fg='green', bold=True))
     
     # 准备表格数据
-    headers = ['姓名', '部门', '工作承担', *categories, '总分']
+    headers = ['员工ID', '姓名', '部门', '工作承担', *categories, '总分']
     table_data = []
     
     for row in summary_data:
+        emp_id = row[0]
         name = row[1]
         department = row[2]
         workload_score = click.style(f"{row[3]:>6.2f}", fg='blue')
@@ -952,7 +953,7 @@ def show_performance_summary(format):
             category_scores.append(score_str)
         total_score = click.style(f"{row[-1]:>6.2f}", fg='yellow', bold=True)
         
-        table_data.append([name, department, workload_score, *category_scores, total_score])
+        table_data.append([emp_id, name, department, workload_score, *category_scores, total_score])
     
     click.echo(tabulate(table_data, headers=headers, tablefmt=format))
 
